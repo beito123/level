@@ -1,4 +1,5 @@
 package anvil
+
 /*
 	level
 
@@ -9,7 +10,10 @@ package anvil
 */
 
 import (
+	"fmt"
+
 	"github.com/beito123/level"
+	"github.com/beito123/nbt"
 )
 
 // Anvil is a level format
@@ -21,13 +25,13 @@ type Anvil struct {
 // getRegion returns a region with xy
 // If the Region doesn't exist, ok is false
 func (lvl *Anvil) getRegion(x, y int) (r *Region, ok bool) {
-	r, ok = lvl.regions[lvl.toID(x, y)]
+	r, ok = lvl.regions[lvl.toRegionKey(x, y)]
 
 	return r, ok
 }
 
 // toCC returns id for container from region coordinate
-func (Anvil) toID(x, y int) uint64 {
+func (Anvil) toRegionKey(x, y int) uint64 {
 	return uint64(int64(x)<<32 | int64(y))
 }
 
@@ -75,7 +79,51 @@ func (lvl *Anvil) Chunks() []level.Chunk {
 	return nil
 }
 
+// NewChunk returns new Chunk
+func NewChunk(x, y int) (*Chunk, error) {
+	return &Chunk{
+		x: x,
+		y: y,
+	}, nil
+}
+
+// ReadChunk returns new Chunk with CompoundTag
+func ReadChunk(tag *nbt.Compound) (*Chunk, error) {
+	dump, err := tag.ToString()
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("Dump: %s", dump)
+
+	com, err := tag.GetCompound("Level")
+	if err != nil {
+		return nil, err
+	}
+
+	x, err := com.GetInt("xPos")
+	if err != nil {
+		return nil, err
+	}
+
+	y, err := com.GetInt("zPos")
+	if err != nil {
+		return nil, err
+	}
+
+	return NewChunk(int(x), int(y))
+}
+
 // Chunk is
 type Chunk struct {
-	//
+	x int
+	y int
+}
+
+func (chunk *Chunk) X() int {
+	return chunk.x
+}
+
+func (chunk *Chunk) Y() int {
+	return chunk.y
 }
