@@ -10,6 +10,9 @@ package anvil
 */
 
 import (
+	"bytes"
+	"compress/gzip"
+	"compress/zlib"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -17,14 +20,27 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/beito123/nbt"
-
 	"github.com/beito123/level/binary"
 	"github.com/beito123/level/util"
 )
 
+var (
+	// RegionFileMCRegion returns a region file name for mcregion
+	RegionFileMCRegion = func(x, y int) string {
+		return "r." + strconv.Itoa(x) + "." + strconv.Itoa(y) + ".mcr"
+	}
+
+	// RegionFileAnvil returns a region file name for mcregion
+	RegionFileAnvil = func(x, y int) string {
+		return "r." + strconv.Itoa(x) + "." + strconv.Itoa(y) + ".mca"
+	}
+)
+
+//
+
 // NewRegionLoader returns new RegionLoader
-func NewRegionLoader(path string) (*RegionLoader, error) {
+// You can set RegionFileMCRegion and RegionFileAnvil to tofile
+func NewRegionLoader(path string, tofile func(x, y int) string) (*RegionLoader, error) {
 	path, err := filepath.Abs(filepath.Clean(path))
 	if err != nil {
 		return nil, err
@@ -40,33 +56,28 @@ func NewRegionLoader(path string) (*RegionLoader, error) {
 	}
 
 	return &RegionLoader{
-		path: path,
+		path:         path,
+		ToRegionFile: tofile,
 	}, nil
 }
 
 // RegionLoader controls a region file on dir and pass Region to load a region
 type RegionLoader struct {
 	path string
-}
 
-func (RegionLoader) toRegionFile(x, y int) string { // Should I write to be able to change?
-	return "r." + strconv.Itoa(x) + "." + strconv.Itoa(y) + ".mca"
-}
-
-func (rl *RegionLoader) createRegion(x, y int) (*Region, error) {
-	return nil, nil
+	ToRegionFile func(x, y int) string
 }
 
 // LoadRegion loads a region
 func (rl *RegionLoader) LoadRegion(x, y int, create bool) (*Region, error) {
-	path := rl.path + "/" + rl.toRegionFile(x, y)
+	path := util.To(rl.path, rl.ToRegionFile(x, y))
 
 	if !util.ExistFile(path) {
 		if !create {
 			return nil, fmt.Errorf("level.anvil: couldn't find the region (x: %d, y: %d)", x, y)
 		}
 
-		return rl.createRegion(x, y)
+		return NewRegion(x, y), nil
 	}
 
 	file, err := os.Open(path)
@@ -76,10 +87,7 @@ func (rl *RegionLoader) LoadRegion(x, y int, create bool) (*Region, error) {
 
 	defer file.Close()
 
-	reg := &Region{
-		X: x,
-		Y: y,
-	}
+	reg := NewRegion(x, y)
 
 	b, err := ioutil.ReadAll(file)
 	if err != nil {
@@ -92,6 +100,18 @@ func (rl *RegionLoader) LoadRegion(x, y int, create bool) (*Region, error) {
 	}
 
 	return reg, nil
+}
+
+// SaveRegion saves a region as a file
+func (rl *RegionLoader) SaveRegion(reg *Region) error {
+	b, err := reg.Save()
+	if err != nil {
+		return err
+	}
+
+	path := util.To(rl.path, rl.ToRegionFile(reg.X, reg.Y))
+
+	return ioutil.WriteFile(path, b, os.ModePerm)
 }
 
 const (
@@ -111,12 +131,47 @@ const (
 	InformationSector = LocationsBytes + TimestampsBytes
 )
 
+const (
+	// CompressionGZip compresses chunk data with gzip for chunk data
+	CompressionGZip = iota + 1
+
+	// CompressionZlib compresses chunk data with zlib for chunk data
+	CompressionZlib
+)
+
+// NewRegion returns new Region with xy
+func NewRegion(x, y int) *Region {
+	return &Region{
+		X:          x,
+		Y:          y,
+		Data:       make([]byte, InformationSector),
+		Locations:  make([]*Location, ChunkCount),
+		Timestamps: make([]int32, ChunkCount),
+	}
+}
+
 // Region is a section had 32x32 chunks
 type Region struct {
 	X int
 	Y int
 
-	Chunks map[uint64]*Chunk
+	Data []byte
+
+	Locations  []*Location
+	Timestamps []int32
+}
+
+func (Region) vaild(x, y int) error {
+	if x < 0 || x >= 32 || y < 0 || y >= 32 {
+		return fmt.Errorf("invaild x and y, they should be been 0 <= x < 32")
+	}
+
+	return nil
+}
+
+// getIndex returns index for Locations and Timestamps
+func (Region) getIndex(x, y int) int {
+	return x + (y * 32)
 }
 
 // Load loads a region from region file bytes
@@ -125,14 +180,14 @@ func (reg *Region) Load(b []byte) error {
 		return fmt.Errorf("level.anvil.region: the region bytes isn't not enough")
 	}
 
-	reg.Chunks = make(map[uint64]*Chunk, ChunkCount)
+	reg.Data = b
 
 	stream := binary.NewStreamBytes(b[:LocationsBytes+TimestampsBytes])
 
 	// Read Locations
-	locations := make([]*Location, ChunkCount)
+	reg.Locations = make([]*Location, ChunkCount)
 
-	for i := 0; i < len(locations); i++ {
+	for i := 0; i < len(reg.Locations); i++ {
 		offset, err := stream.Triad() // location of chunk data
 		if err != nil {
 			return err
@@ -143,74 +198,25 @@ func (reg *Region) Load(b []byte) error {
 			return err
 		}
 
-		locations[i] = &Location{
+		reg.Locations[i] = &Location{
 			Off:   offset,
 			Count: count,
 		}
 	}
 
 	// Read timestamps
-	timestamps := make([]int32, ChunkCount)
+	reg.Timestamps = make([]int32, ChunkCount)
 
-	for i := 0; i < len(timestamps); i++ {
+	for i := 0; i < len(reg.Timestamps); i++ {
 		stamp, err := stream.Int()
 		if err != nil {
 			return err
 		}
 
-		timestamps[i] = stamp
-	}
-
-	stream.Reset() // the bytes won't be use
-
-	// Read chunk data
-	for _, locat := range locations {
-		off := int(locat.Off) * Sector
-		ln := int(locat.Count) * Sector
-
-		if off == 0 && ln == 0 { // It haven't generated yet
-			continue
-		} else if off < 2 {
-			return fmt.Errorf("level.anvil.region: invaild offset")
-		}
-
-		stream = binary.NewStreamBytes(b[off : off+ln]) // chunk data + pads
-
-		realLen, err := stream.Int() // ln = readLen + pad(realLen % 4096bytes)
-		if err != nil {
-			return err
-		}
-
-		stream.Skip(1) // compression type, but we won't use
-
-		nstream, err := nbt.FromBytes(stream.Get(int(realLen)), nbt.BigEndian) // NBT Data
-		if err != nil {
-			return err
-		}
-
-		tag, err := nstream.ReadTag()
-		if err != nil {
-			return err
-		}
-
-		com, ok := tag.(*nbt.Compound)
-		if !ok {
-			return fmt.Errorf("level.anvil.region: expected to be CompoundTag, but it passed different tag(%sTag)", nbt.GetTagName(tag.ID()))
-		}
-
-		chunk, err := ReadChunk(com)
-		if err != nil {
-			return err
-		}
-
-		reg.Chunks[reg.toKey(chunk.X(), chunk.Y())] = chunk
+		reg.Timestamps[i] = stamp
 	}
 
 	return nil
-}
-
-func (Region) toKey(x, y int) uint64 {
-	return uint64(int64(x)<<32 | int64(y))
 }
 
 // Save saves region data, returns bytes for a region file
@@ -218,6 +224,67 @@ func (reg *Region) Save() ([]byte, error) {
 	// TODO: write
 
 	return nil, nil
+}
+
+// ReadChunk reads a chunk, returns chunk data as []byte
+// If the chunk doesn't exist, returns nil both two values
+func (reg *Region) ReadChunk(x, y int) ([]byte, error) {
+	err := reg.vaild(x, y)
+	if err != nil {
+		return nil, err
+	}
+
+	locat := reg.Locations[reg.getIndex(x, y)]
+
+	off := int(locat.Off) * Sector
+	ln := int(locat.Count) * Sector
+
+	if off == 0 { // It haven't generated yet
+		return nil, nil
+	}
+
+	stream := binary.NewStreamBytes(reg.Data[off : off+ln]) // chunk data + pads
+
+	realLen, err := stream.Int() // ln = readLen + pad(4096 - (readlen % 4096)
+	if err != nil {
+		return nil, err
+	}
+
+	ctype, err := stream.Byte()
+	if err != nil {
+		return nil, err
+	}
+
+	data := stream.Get(int(realLen)) // chunk data
+
+	switch ctype {
+	case CompressionGZip:
+		read, err := gzip.NewReader(bytes.NewBuffer(data))
+		if err != nil {
+			return nil, err
+		}
+
+		defer read.Close()
+
+		data, err = ioutil.ReadAll(read)
+		if err != nil {
+			return nil, err
+		}
+	case CompressionZlib:
+		read, err := zlib.NewReader(bytes.NewBuffer(data))
+		if err != nil {
+			return nil, err
+		}
+
+		defer read.Close()
+
+		data, err = ioutil.ReadAll(read)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return data, nil
 }
 
 // Location is a location info for chunk data

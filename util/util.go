@@ -30,3 +30,7 @@ func ExistDir(dir string) bool {
 
 	return err == nil && f.IsDir()
 }
+
+func To(root string, child string) string {
+	return root + string(filepath.Separator) + child
+}
