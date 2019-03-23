@@ -237,17 +237,17 @@ func (SubChunkFormatB) Read(tag *nbt.Compound) (*SubChunk, error) {
 
 	longLen := binary.LongSize * 8 // 1bytes = 8bits // 64
 
-	bits := (len(blockData) * longLen) / blockCount // bits per block
-	mask := int64((1 << uint(bits)) - 1)            // returns 4bits -> 0b1111
+	bit := (len(blockData) * longLen) / blockCount // bits per block
+	mask := int64((1 << uint(bit)) - 1)            // returns 4bits -> 0b1111
 
 	sub.Blocks = make([]uint16, blockCount)
 
 	var count int
 	for _, data := range blockData {
-		for i := 0; i < (longLen / bits); i++ {
-			id := (data >> uint(bits*i)) & mask
+		for i := 0; i < (longLen / bit); i++ {
+			id := uint16(data >> uint(bit*i)) & uint16(mask)
 
-			sub.Blocks[count] = uint16(id)
+			sub.Blocks[count] = id
 
 			count++
 		}
