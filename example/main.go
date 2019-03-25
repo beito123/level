@@ -22,8 +22,6 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"gopkg.in/cheggaaa/pb.v1"
-
 	"github.com/beito123/level/util"
 
 	"github.com/beito123/level/anvil"
@@ -81,7 +79,7 @@ func (mak *MakingImage) Add(img *image.RGBA, index int) {
 	bounds := img.Bounds()
 	rect := image.Rect(pt.X, pt.Y, pt.X+bounds.Dx(), pt.Y+bounds.Dy())
 	if index >= len(mak.Image.Image) { // New
-		pimg := image.NewPaletted(mak.Bounds, palette.Plan9)
+		pimg := image.NewPaletted(mak.Bounds, palette.WebSafe)
 		draw.Draw(pimg, rect, img, image.ZP, draw.Src)
 
 		mak.Image.Delay = append(mak.Image.Delay, mak.Delay)
@@ -110,12 +108,12 @@ func test() error {
 	generator.Textures.PathList["minecraft:water"] = resPath + "/textures/blocks/" + "water_placeholder.png"
 	generator.Textures.PathList["minecraft:grass"] = resPath + "/textures/blocks/" + "grass_carried.png"
 
-	scale := 2
+	scale := 4
 	line := 16 * 16 * scale
 	img := image.NewRGBA(image.Rect(0, 0, line, line))
 
-	bx := 0
-	by := 0
+	bx := -8
+	by := -8
 	//base := 0
 
 	making = &MakingImage{
@@ -125,7 +123,7 @@ func test() error {
 
 	making.Ready()
 
-	bar := pb.StartNew(scale * scale)
+	//bar := pb.StartNew(scale * scale)
 	for i := 0; i < scale; i++ {
 		for j := 0; j < scale; j++ {
 			x := bx + i
@@ -138,7 +136,7 @@ func test() error {
 				return err
 			}
 
-			bar.Increment()
+			//bar.Increment()
 
 			if gimg == nil {
 				continue
@@ -148,7 +146,7 @@ func test() error {
 		}
 	}
 
-	bar.FinishPrint("complete!")
+	//bar.FinishPrint("complete!")
 
 	path := "./chunks.png"
 
@@ -270,6 +268,11 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 			for z := 0; z < 16; z++ {
 				for x := 0; x < 16; x++ {
 					maker.Add(x, z, int(sub.Blocks[y<<8|z<<4|x]))
+
+					id := int(sub.Blocks[y<<8|z<<4|x])
+					if id >= len(sub.Palette) {
+						fmt.Printf("invail palette, id: %d (0b%b)\n", id, id)
+					}
 				}
 			}
 

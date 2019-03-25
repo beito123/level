@@ -134,6 +134,8 @@ func ReadChunk(x, y int, b []byte) (*Chunk, error) {
 		return nil, err
 	}
 
+	fmt.Printf("x: %d, y: %d \n", x, y)
+
 	err = chunk.Load(com)
 	if err != nil {
 		return nil, err
@@ -215,7 +217,14 @@ type SubChunkFormat interface {
 	Read(tag *nbt.Compound) (*SubChunk, error)
 }
 
-type SubChunkFormatB struct { // for after v1.13
+type SubChunkFormatA struct { // before v1.13
+}
+
+func (SubChunkFormatA) Read(tag *nbt.Compound) (*SubChunk, error) {
+	return nil, nil
+}
+
+type SubChunkFormatB struct { // after v1.13
 }
 
 func (SubChunkFormatB) Read(tag *nbt.Compound) (*SubChunk, error) {
@@ -237,20 +246,50 @@ func (SubChunkFormatB) Read(tag *nbt.Compound) (*SubChunk, error) {
 
 	longLen := binary.LongSize * 8 // 1bytes = 8bits // 64
 
-	bit := (len(blockData) * longLen) / blockCount // bits per block
-	mask := int64((1 << uint(bit)) - 1)            // returns 4bits -> 0b1111
+	bit := (len(blockData) * longLen) / blockCount      // bits per block
+	perBlock := (len(blockData) * longLen) / blockCount // bits per block
+	mask := uint16((1 << uint(bit)) - 1)                // returns 4bits -> 0b1111
+
+	fmt.Printf("bits: %02b\n", mask)
 
 	sub.Blocks = make([]uint16, blockCount)
 
 	var count int
-	for _, data := range blockData {
+	/*for _, data := range blockData {
 		for i := 0; i < (longLen / bit); i++ {
-			id := uint16(data >> uint(bit*i)) & uint16(mask)
+			id := uint16(data>>uint(bit*i)) & uint16(mask)
 
 			sub.Blocks[count] = id
 
 			count++
 		}
+	}*/
+
+	var c2 = 100
+	for i := 0; i < blockCount; i++ {
+		index := (perBlock * i) / longLen
+		off := (perBlock * i) % longLen
+
+		data := uint16(uint64(blockData[index])>>uint(off)) & mask
+
+		left := ((off + perBlock) - longLen)
+		if left > 0 {
+			m := uint64((1 << uint(left)) - 1)
+			data = ((uint16(uint64(blockData[index+1])&m) << uint(perBlock-left)) | data) & mask
+
+			if c2 <= 10 {
+				fmt.Printf("base: %064b, \nsub:  %064b\n", uint64(blockData[index]), uint64(blockData[index+1]))
+				fmt.Printf("index: %d, offset: %d, left: %d \n", index, off, left)
+				fmt.Printf("from: %05b, to: %05b\n", uint16(uint64(blockData[index])>>uint(off))&mask, data)
+
+				c2++
+			}
+
+		}
+
+		sub.Blocks[count] = data
+
+		count++
 	}
 
 	palettes, err := tag.GetList("Palette")
