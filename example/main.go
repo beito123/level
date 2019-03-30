@@ -25,7 +25,6 @@ import (
 
 	"github.com/beito123/level/anvil"
 	"github.com/beito123/level/util"
-	"gopkg.in/cheggaaa/pb.v1"
 )
 
 func main() {
@@ -97,6 +96,7 @@ func test() error {
 	}
 
 	generator.Textures.AddAlias("minecraft:air", "minecraft:cave_air")
+	generator.Textures.AddAlias("minecraft:grass_block", "minecraft:grass")
 
 	generator.Textures.PathList["minecraft:granite"] = resPath + "/textures/blocks/" + "stone_granite.png"
 	generator.Textures.PathList["minecraft:diorite"] = resPath + "/textures/blocks/" + "stone_diorite.png"
@@ -104,123 +104,54 @@ func test() error {
 	generator.Textures.PathList["minecraft:lava"] = resPath + "/textures/blocks/" + "lava_placeholder.png"
 	generator.Textures.PathList["minecraft:water"] = resPath + "/textures/blocks/" + "water_placeholder.png"
 	generator.Textures.PathList["minecraft:grass"] = resPath + "/textures/blocks/" + "grass_carried.png"
+	generator.Textures.PathList["minecraft:grass_block"] = resPath + "/textures/blocks/" + "grass_carried.png"
 
-	scale := 2
+	scale := 32
 	line := 16 * 16 * scale
-	//img := image.NewRGBA(image.Rect(0, 0, line, line))
+	img := image.NewRGBA(image.Rect(0, 0, line, line))
 
-	bx := -8
-	by := -8
+	bx := -32
+	by := -24
 	//base := 0
 
 	//bar := pb.StartNew(scale * scale)
-
-	type ImageData struct {
-		X      int
-		Y      int
-		Images []image.Image
-	}
-
-	count := scale * scale
-	imgCh := make(chan *ImageData, count)
-
-	for i := 0; i < scale; i++ { // x
-		for j := 0; j < scale; j++ { // y
-			go func(i int, j int) {
-				x := bx + i
-				y := by + j
-
-				gene := generator.Clone(generator.Textures)
-
-				gene.EnabledMaking = true
-
-				_, err := gene.Generate(x, y)
-				if err != nil {
-					panic(err)
-				}
-
-				imgCh <- &ImageData{
-					X:      i,
-					Y:      j,
-					Images: gene.Making,
-				}
-			}(i, j)
-		}
-	}
-
-	making := &MakingImage{
+	/*making := &MakingImage{
 		Delay:  1,
 		Bounds: image.Rect(0, 0, line, line),
 	}
 
-	making.Ready()
+	making.Ready()*/
 
-	bar := pb.StartNew(scale * scale)
+	for i := 0; i < scale; i++ {
+		for j := 0; j < scale; j++ {
+			x := bx + i
+			y := by + j
 
-	for i := 0; i < count; i++ {
-		data := <-imgCh
+			//making.Point = image.Pt(i*16*16, j*16*16)
 
-		for j, val := range data.Images {
-			if val == nil {
+			gimg, err := generator.Generate(x, y)
+			if err != nil {
+				return err
+			}
+
+			//bar.Increment()
+
+			if gimg == nil {
 				continue
 			}
 
-			making.Add(val, image.Pt(data.X*16*16, data.Y*16*16), j)
-
-			data.Images[j] = nil
+			SetImage(gimg, img, i*16*16, j*16*16)
 		}
-
-		data.Images = nil
-
-		bar.Increment()
 	}
 
-	bar.FinishPrint("generated!")
+	//bar.FinishPrint("complete!")
 
-	/*
-			making = &MakingImage{
-				Delay:  1,
-				Bounds: image.Rect(0, 0, line, line),
-			}
+	path := "./chunks.png"
 
-			making.Ready()
+	file, _ := os.Create(path)
+	defer file.Close()
 
-			for i := 0; i < scale; i++ {
-				for j := 0; j < scale; j++ {
-					x := bx + i
-					y := by + j
-
-					making.Point = image.Pt(i*16*16, j*16*16)
-
-					gimg, err := generator.Generate(x, y)
-					if err != nil {
-						return err
-					}
-
-					//bar.Increment()
-
-					if gimg == nil {
-						continue
-					}
-
-					SetImage(gimg, img, i*16*16, j*16*16)
-				}
-			}
-
-		//bar.FinishPrint("complete!")
-
-		path := "./chunks.png"
-
-		file, _ := os.Create(path)
-		defer file.Close()
-
-		err = png.Encode(file, img)
-		if err != nil {
-			return err
-		}
-	*/
-
-	err = making.Outputs("./ani.gif")
+	err = png.Encode(file, img)
 	if err != nil {
 		return err
 	}
@@ -596,11 +527,15 @@ func (mk *ChunkImageMaker) AddBlockData(id int, img image.Image) {
 }
 
 func SetImage(src image.Image, dst *image.RGBA, atX, atY int) {
-	for y := 0; y < src.Bounds().Dy(); y++ { // y
+	/*for y := 0; y < src.Bounds().Dy(); y++ { // y
 		for x := 0; x < src.Bounds().Dx(); x++ { // x
 			dst.Set(atX+x, atY+y, src.At(x, y))
 		}
-	}
+	}*/
+
+	size := src.Bounds().Size()
+	rect := image.Rect(atX, atY, atX+size.X, atY+size.Y)
+	draw.Draw(dst, rect, src, image.ZP, draw.Over)
 }
 
 /* Old codes
