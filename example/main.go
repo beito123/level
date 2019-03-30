@@ -21,10 +21,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-
-	"github.com/beito123/level/util"
+	"sync"
 
 	"github.com/beito123/level/anvil"
+	"github.com/beito123/level/util"
+	"gopkg.in/cheggaaa/pb.v1"
 )
 
 func main() {
@@ -36,12 +37,9 @@ func main() {
 	}
 }
 
-var making *MakingImage
-
 type MakingImage struct {
 	Image  *gif.GIF
 	Bounds image.Rectangle
-	Point  image.Point
 
 	Delay int
 }
@@ -66,20 +64,11 @@ func (mak *MakingImage) Outputs(path string) error {
 	return nil
 }
 
-func (mak *MakingImage) Add(img *image.RGBA, index int) {
-	/*
-		pimg := image.NewPaletted(mak.Bounds, palette.Plan9)
-		pt := mak.Point
-		bounds := img.Bounds()
-		rect := image.Rect(pt.X, pt.Y, pt.X+bounds.Dx(), pt.Y+bounds.Dy())
-		draw.Draw(pimg, rect, img, image.ZP, draw.Over)
-	*/
-
-	pt := mak.Point
-	bounds := img.Bounds()
-	rect := image.Rect(pt.X, pt.Y, pt.X+bounds.Dx(), pt.Y+bounds.Dy())
+func (mak *MakingImage) Add(img image.Image, pt image.Point, index int) {
+	size := img.Bounds().Size()
+	rect := image.Rect(pt.X, pt.Y, pt.X+size.X, pt.Y+size.Y)
 	if index >= len(mak.Image.Image) { // New
-		pimg := image.NewPaletted(mak.Bounds, palette.WebSafe)
+		pimg := image.NewPaletted(mak.Bounds, palette.Plan9)
 		draw.Draw(pimg, rect, img, image.ZP, draw.Src)
 
 		mak.Image.Delay = append(mak.Image.Delay, mak.Delay)
@@ -90,8 +79,16 @@ func (mak *MakingImage) Add(img *image.RGBA, index int) {
 	}
 }
 
+func (mak *MakingImage) SetImage(pimg *image.Paletted, index int) {
+	if index >= len(mak.Image.Image) { // New
+		mak.Image.Image = append(mak.Image.Image, pimg)
+	} else {
+		mak.Image.Image[index] = pimg
+	}
+}
+
 func test() error {
-	resPath := "./resources/Vanilla_Resource_Pack_1.9.0"
+	resPath := "./resources/vanilla"
 	regionPath := "./region-v1.13"
 
 	generator, err := NewMapGenerator(resPath, regionPath)
@@ -108,55 +105,120 @@ func test() error {
 	generator.Textures.PathList["minecraft:water"] = resPath + "/textures/blocks/" + "water_placeholder.png"
 	generator.Textures.PathList["minecraft:grass"] = resPath + "/textures/blocks/" + "grass_carried.png"
 
-	scale := 4
+	scale := 2
 	line := 16 * 16 * scale
-	img := image.NewRGBA(image.Rect(0, 0, line, line))
+	//img := image.NewRGBA(image.Rect(0, 0, line, line))
 
 	bx := -8
 	by := -8
 	//base := 0
 
-	making = &MakingImage{
+	//bar := pb.StartNew(scale * scale)
+
+	type ImageData struct {
+		X      int
+		Y      int
+		Images []image.Image
+	}
+
+	count := scale * scale
+	imgCh := make(chan *ImageData, count)
+
+	for i := 0; i < scale; i++ { // x
+		for j := 0; j < scale; j++ { // y
+			go func(i int, j int) {
+				x := bx + i
+				y := by + j
+
+				gene := generator.Clone(generator.Textures)
+
+				gene.EnabledMaking = true
+
+				_, err := gene.Generate(x, y)
+				if err != nil {
+					panic(err)
+				}
+
+				imgCh <- &ImageData{
+					X:      i,
+					Y:      j,
+					Images: gene.Making,
+				}
+			}(i, j)
+		}
+	}
+
+	making := &MakingImage{
 		Delay:  1,
 		Bounds: image.Rect(0, 0, line, line),
 	}
 
 	making.Ready()
 
-	//bar := pb.StartNew(scale * scale)
-	for i := 0; i < scale; i++ {
-		for j := 0; j < scale; j++ {
-			x := bx + i
-			y := by + j
+	bar := pb.StartNew(scale * scale)
 
-			making.Point = image.Pt(i*16*16, j*16*16)
+	for i := 0; i < count; i++ {
+		data := <-imgCh
 
-			gimg, err := generator.Generate(x, y)
-			if err != nil {
-				return err
-			}
-
-			//bar.Increment()
-
-			if gimg == nil {
+		for j, val := range data.Images {
+			if val == nil {
 				continue
 			}
 
-			SetImage(gimg, img, i*16*16, j*16*16)
+			making.Add(val, image.Pt(data.X*16*16, data.Y*16*16), j)
+
+			data.Images[j] = nil
 		}
+
+		data.Images = nil
+
+		bar.Increment()
 	}
 
-	//bar.FinishPrint("complete!")
+	bar.FinishPrint("generated!")
 
-	path := "./chunks.png"
+	/*
+			making = &MakingImage{
+				Delay:  1,
+				Bounds: image.Rect(0, 0, line, line),
+			}
 
-	file, _ := os.Create(path)
-	defer file.Close()
+			making.Ready()
 
-	err = png.Encode(file, img)
-	if err != nil {
-		return err
-	}
+			for i := 0; i < scale; i++ {
+				for j := 0; j < scale; j++ {
+					x := bx + i
+					y := by + j
+
+					making.Point = image.Pt(i*16*16, j*16*16)
+
+					gimg, err := generator.Generate(x, y)
+					if err != nil {
+						return err
+					}
+
+					//bar.Increment()
+
+					if gimg == nil {
+						continue
+					}
+
+					SetImage(gimg, img, i*16*16, j*16*16)
+				}
+			}
+
+		//bar.FinishPrint("complete!")
+
+		path := "./chunks.png"
+
+		file, _ := os.Create(path)
+		defer file.Close()
+
+		err = png.Encode(file, img)
+		if err != nil {
+			return err
+		}
+	*/
 
 	err = making.Outputs("./ani.gif")
 	if err != nil {
@@ -184,10 +246,21 @@ func NewMapGenerator(path, rpath string) (*MapGenerator, error) {
 }
 
 type MapGenerator struct {
-	Path     string
-	Textures *TextureManager
+	Path          string
+	Textures      *TextureManager
+	EnabledMaking bool
+	Making        []image.Image
 
 	loader *anvil.RegionLoader
+}
+
+func (mg *MapGenerator) Clone(tm *TextureManager) *MapGenerator {
+	return &MapGenerator{
+		Path:          mg.Path,
+		Textures:      tm,
+		EnabledMaking: mg.EnabledMaking,
+		Making:        mg.Making,
+	}
 }
 
 func (mg *MapGenerator) HasLoaded() bool {
@@ -241,6 +314,10 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 	maker := ChunkImageMaker{}
 	maker.Ready()
 
+	if mg.EnabledMaking {
+		mg.Making = make([]image.Image, 16*16)
+	}
+
 	for _, sub := range subchunks {
 		if sub == nil {
 			continue
@@ -267,16 +344,21 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 		for y := 0; y < 16; y++ {
 			for z := 0; z < 16; z++ {
 				for x := 0; x < 16; x++ {
-					maker.Add(x, z, int(sub.Blocks[y<<8|z<<4|x]))
-
 					id := int(sub.Blocks[y<<8|z<<4|x])
+
+					maker.Add(x, z, id)
+
 					if id >= len(sub.Palette) {
 						fmt.Printf("invail palette, id: %d (0b%b)\n", id, id)
 					}
 				}
 			}
 
-			making.Add(maker.Image, (int(sub.Y)*16)+y)
+			if mg.EnabledMaking {
+				img := image.NewRGBA(maker.Image.Bounds())
+				copy(img.Pix[:], maker.Image.Pix[:])
+				mg.Making[int(sub.Y*16)+y] = img
+			}
 		}
 
 	}
@@ -300,27 +382,36 @@ type TextureManager struct {
 	Aliases  map[string][]string
 
 	preparedImages map[string]image.Image
+
+	mutex sync.RWMutex
 }
 
 func (tm *TextureManager) getBlockName(name string) (string, bool) {
+	tm.mutex.RLock()
 	_, ok := tm.PathList[name]
 	if ok {
+		tm.mutex.RUnlock()
 		return name, true
 	}
 
 	for n, v := range tm.Aliases {
 		for _, c := range v {
 			if c == name {
+				tm.mutex.RUnlock()
 				return n, true
 			}
 		}
 	}
 
+	tm.mutex.RUnlock()
+
 	return "", false
 }
 
 func (tm *TextureManager) AddAlias(name string, aliases ...string) bool {
+	tm.mutex.Lock()
 	tm.Aliases[name] = append(tm.Aliases[name], aliases...)
+	tm.mutex.Unlock()
 
 	return true
 }
@@ -331,10 +422,15 @@ func (tm *TextureManager) HasTexture(name string) bool {
 		return false
 	}
 
+	tm.mutex.RLock()
+
 	path, ok := tm.PathList[name]
 	if !ok {
+		tm.mutex.RUnlock()
 		return false
 	}
+
+	tm.mutex.RUnlock()
 
 	if !util.ExistFile(path) {
 		return false
@@ -355,7 +451,11 @@ func (tm *TextureManager) GetTexture(name string) (image.Image, error) {
 		}
 	}
 
-	return tm.preparedImages[name], nil
+	tm.mutex.RLock()
+	result := tm.preparedImages[name]
+	tm.mutex.RUnlock()
+
+	return result, nil
 }
 
 func (tm *TextureManager) HasPrepared(name string) bool {
@@ -363,8 +463,9 @@ func (tm *TextureManager) HasPrepared(name string) bool {
 	if !ok {
 		return false
 	}
-
+	tm.mutex.RLock()
 	_, ok = tm.preparedImages[name]
+	tm.mutex.RUnlock()
 
 	return ok
 }
@@ -375,10 +476,14 @@ func (tm *TextureManager) Prepare(name string) error {
 		return fmt.Errorf("couldn't find a block")
 	}
 
+	tm.mutex.RLock()
 	path, ok := tm.PathList[name]
 	if !ok {
+		tm.mutex.RUnlock()
 		return fmt.Errorf("couldn't find a path for the block")
 	}
+
+	tm.mutex.RUnlock()
 
 	if !util.ExistFile(path) {
 		return fmt.Errorf("couldn't find a image file")
@@ -396,7 +501,9 @@ func (tm *TextureManager) Prepare(name string) error {
 		return err
 	}
 
+	tm.mutex.Lock()
 	tm.preparedImages[name] = img
+	tm.mutex.Unlock()
 
 	return nil
 }
@@ -423,6 +530,7 @@ func (tm *TextureManager) LoadResourcePack(path string) error {
 		return err
 	}
 
+	tm.mutex.Lock()
 	for name, d := range data { // of course, bad hack for mojang
 		var tname string
 
@@ -443,6 +551,8 @@ func (tm *TextureManager) LoadResourcePack(path string) error {
 
 		tm.PathList["minecraft:"+name] = util.To(path, "/textures/blocks/"+tname+".png")
 	}
+
+	tm.mutex.Unlock()
 
 	return nil
 }

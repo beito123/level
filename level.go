@@ -16,8 +16,8 @@ type Level struct {
 	// Load level.dat and manage level data (name, spaen and etc..)
 }
 
-// LevelFormat is a simple interface for level formats
-type LevelFormat interface {
+// Format is a simple interface for level formats
+type Format interface {
 
 	// LoadChunk loads a chunk.
 	// If create is true, generates a chunk.
