@@ -13,15 +13,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
-	"image/color/palette"
+	"image/color"
 	"image/draw"
-	"image/gif"
 	"image/png"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sync"
+
+	"github.com/pbnjay/pixfont"
+	"gopkg.in/cheggaaa/pb.v1"
 
 	"github.com/beito123/level/anvil"
 	"github.com/beito123/level/util"
@@ -36,59 +38,9 @@ func main() {
 	}
 }
 
-type MakingImage struct {
-	Image  *gif.GIF
-	Bounds image.Rectangle
-
-	Delay int
-}
-
-func (mak *MakingImage) Ready() {
-	mak.Image = &gif.GIF{}
-}
-
-func (mak *MakingImage) Outputs(path string) error {
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-
-	defer file.Close()
-
-	err = gif.EncodeAll(file, mak.Image)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (mak *MakingImage) Add(img image.Image, pt image.Point, index int) {
-	size := img.Bounds().Size()
-	rect := image.Rect(pt.X, pt.Y, pt.X+size.X, pt.Y+size.Y)
-	if index >= len(mak.Image.Image) { // New
-		pimg := image.NewPaletted(mak.Bounds, palette.Plan9)
-		draw.Draw(pimg, rect, img, image.ZP, draw.Src)
-
-		mak.Image.Delay = append(mak.Image.Delay, mak.Delay)
-		mak.Image.Image = append(mak.Image.Image, pimg)
-	} else { // Over
-		pimg := mak.Image.Image[index]
-		draw.Draw(pimg, rect, img, image.ZP, draw.Over)
-	}
-}
-
-func (mak *MakingImage) SetImage(pimg *image.Paletted, index int) {
-	if index >= len(mak.Image.Image) { // New
-		mak.Image.Image = append(mak.Image.Image, pimg)
-	} else {
-		mak.Image.Image[index] = pimg
-	}
-}
-
 func test() error {
 	resPath := "./resources/vanilla"
-	regionPath := "./region-v1.13"
+	regionPath := "./region"
 
 	generator, err := NewMapGenerator(resPath, regionPath)
 	if err != nil {
@@ -106,15 +58,15 @@ func test() error {
 	generator.Textures.PathList["minecraft:grass"] = resPath + "/textures/blocks/" + "grass_carried.png"
 	generator.Textures.PathList["minecraft:grass_block"] = resPath + "/textures/blocks/" + "grass_carried.png"
 
-	scale := 32
+	scale := 64
 	line := 16 * 16 * scale
 	img := image.NewRGBA(image.Rect(0, 0, line, line))
 
-	bx := -32
-	by := -24
+	bx := -24
+	by := -16
 	//base := 0
 
-	//bar := pb.StartNew(scale * scale)
+	bar := pb.StartNew(scale * scale)
 	/*making := &MakingImage{
 		Delay:  1,
 		Bounds: image.Rect(0, 0, line, line),
@@ -134,17 +86,22 @@ func test() error {
 				return err
 			}
 
-			//bar.Increment()
+			bar.Increment()
 
 			if gimg == nil {
 				continue
+			}
+
+			rimg, ok := gimg.(*image.RGBA)
+			if ok {
+				pixfont.DrawString(rimg, 8, 8, fmt.Sprintf("%d, %d", x, y), color.Black)
 			}
 
 			SetImage(gimg, img, i*16*16, j*16*16)
 		}
 	}
 
-	//bar.FinishPrint("complete!")
+	bar.FinishPrint("complete!")
 
 	path := "./chunks.png"
 
@@ -243,55 +200,58 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 	subchunks := chunk.SubChunks()
 
 	maker := ChunkImageMaker{}
+	maker.EnabledFreeMap = true
 	maker.Ready()
 
-	if mg.EnabledMaking {
-		mg.Making = make([]image.Image, 16*16)
-	}
-
-	for _, sub := range subchunks {
+	//for _, sub := range subchunks {
+	for i := 0; i < len(subchunks); i++ {
+		sub := subchunks[15-i]
 		if sub == nil {
 			continue
 		}
 
+		//fmt.Printf("test: %d\n", sub.Y)
+
 		maker.ResetBlockData()
 
 		for i, bs := range sub.Palette {
-			if !mg.Textures.HasTexture(bs.Name) {
-				//fmt.Printf("Ignore palette(id:%d, name: %s)\n", i, bs.Name)
+			bl := bs.ToBlockData()
+
+			if !mg.Textures.HasTexture(bl.Name) {
+				//fmt.Printf("Ignore palette(id:%d, name: %s)\n", i, bl.Name)
 				continue
 			}
 
-			img, err := mg.Textures.GetTexture(bs.Name)
+			img, err := mg.Textures.GetTexture(bl.Name)
 			if err != nil {
-				return nil, fmt.Errorf("happened errors while processing palette(id:%d, name: %s) error:%s", i, bs.Name, err)
+				return nil, fmt.Errorf("happened errors while processing palette(id:%d, name: %s) error:%s", i, bl.Name, err)
 			}
 
-			//fmt.Printf("Added palette(id:%d, name: %s)\n", i, bs.Name)
+			//fmt.Printf("Added palette(id:%d, name: %s)\n", i, bl.Name)
 
-			maker.AddBlockData(i, img)
+			maker.AddBlockData(bl.Name, img)
 		}
 
 		for y := 0; y < 16; y++ {
 			for z := 0; z < 16; z++ {
 				for x := 0; x < 16; x++ {
-					id := int(sub.Blocks[y<<8|z<<4|x])
+					bl, err := sub.AtBlock(x, 15-y, z)
+					if err != nil {
+						return nil, err
+					}
 
-					maker.Add(x, z, id)
-
-					if id >= len(sub.Palette) {
-						fmt.Printf("invail palette, id: %d (0b%b)\n", id, id)
+					//fmt.Printf("test2:%s\n", bl.ToBlockData().Name)
+					name := bl.ToBlockData().Name
+					if maker.IsFree(x, z) && name != "minecraft:air" {
+						maker.Add(x, z, name)
 					}
 				}
 			}
-
-			if mg.EnabledMaking {
-				img := image.NewRGBA(maker.Image.Bounds())
-				copy(img.Pix[:], maker.Image.Pix[:])
-				mg.Making[int(sub.Y*16)+y] = img
-			}
 		}
 
+		if maker.IsFull() {
+			break
+		}
 	}
 
 	return maker.Image, nil
@@ -491,13 +451,17 @@ func (tm *TextureManager) LoadResourcePack(path string) error {
 type ChunkImageMaker struct {
 	Image *image.RGBA
 
-	BlockList map[int]image.Image
+	BlockList      map[string]image.Image
+	FreeMap        []bool
+	EnabledFreeMap bool
 }
 
 func (mk *ChunkImageMaker) Ready() {
 	line := 16 * 16
 	mk.Image = image.NewRGBA(image.Rect(0, 0, line, line))
-	mk.BlockList = make(map[int]image.Image)
+	mk.BlockList = make(map[string]image.Image)
+
+	mk.FreeMap = make([]bool, 16*16)
 }
 
 func (mk *ChunkImageMaker) Output(path string) error {
@@ -507,10 +471,28 @@ func (mk *ChunkImageMaker) Output(path string) error {
 	return png.Encode(file, mk.Image)
 }
 
-func (mk *ChunkImageMaker) Add(x, y, id int) {
-	block, ok := mk.BlockList[id]
+func (mk *ChunkImageMaker) IsFree(x, y int) bool {
+	return !mk.FreeMap[y<<4|x]
+}
+
+func (mk *ChunkImageMaker) IsFull() bool {
+	for _, v := range mk.FreeMap {
+		if !v {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (mk *ChunkImageMaker) Add(x, y int, name string) {
+	block, ok := mk.BlockList[name]
 	if !ok {
 		return
+	}
+
+	if mk.EnabledFreeMap {
+		mk.FreeMap[y<<4|x] = true
 	}
 
 	SetImage(block, mk.Image, x*16, y*16)
@@ -519,11 +501,11 @@ func (mk *ChunkImageMaker) Add(x, y, id int) {
 }
 
 func (mk *ChunkImageMaker) ResetBlockData() {
-	mk.BlockList = make(map[int]image.Image)
+	mk.BlockList = make(map[string]image.Image)
 }
 
-func (mk *ChunkImageMaker) AddBlockData(id int, img image.Image) {
-	mk.BlockList[id] = img
+func (mk *ChunkImageMaker) AddBlockData(name string, img image.Image) {
+	mk.BlockList[name] = img
 }
 
 func SetImage(src image.Image, dst *image.RGBA, atX, atY int) {

@@ -18,13 +18,13 @@ import (
 )
 
 // NewChunk returns new Chunk
-func NewChunk(x, y int, subFormat SubChunkFormat) (*Chunk, error) {
+func NewChunk(x, y int, format ChunkFormat) *Chunk {
 	return &Chunk{
-		x:              x,
-		y:              y,
-		subChunks:      make([]*SubChunk, 16),
-		SubChunkFormat: subFormat,
-	}, nil
+		x:           x,
+		y:           y,
+		subChunks:   make([]*SubChunk, 16),
+		ChunkFormat: format,
+	}
 }
 
 // ReadChunk returns new Chunk with CompoundTag
@@ -41,32 +41,19 @@ func ReadChunk(x, y int, b []byte) (*Chunk, error) {
 		return nil, fmt.Errorf("level.anvil.region: expected to be CompoundTag, but it passed different tag(%sTag)", nbt.GetTagName(tag.ID()))
 	}
 
-	var subFormat SubChunkFormat = &SubChunkFormatV112{}
-	if com.Has("DataVersion") { // introduced v1.13
+	var format ChunkFormat = &ChunkFormatV112{}
+	if com.Has("DataVersion") {
 		ver, err := com.GetInt("DataVersion")
 		if err != nil {
 			return nil, err
 		}
 
-		switch ver {
-		default:
-			subFormat = &SubChunkFormatV113{}
+		switch {
+		case ver >= 1519:
+			format = &ChunkFormatV113{}
 		}
 	}
-
-	chunk, err := NewChunk(x, y, subFormat)
-	if err != nil {
-		return nil, err
-	}
-
-	//fmt.Printf("x: %d, y: %d \n", x, y)
-
-	err = chunk.Load(com)
-	if err != nil {
-		return nil, err
-	}
-
-	return chunk, nil
+	return format.Read(com)
 }
 
 // Chunk is
@@ -79,7 +66,7 @@ type Chunk struct {
 	biomes        []int
 	subChunks     []*SubChunk
 
-	SubChunkFormat SubChunkFormat
+	ChunkFormat ChunkFormat
 }
 
 // X returns x coordinate
@@ -132,49 +119,140 @@ func (chunk *Chunk) GetBlock(x, y, z int) (*block.BlockData, error) {
 	return bl.ToBlockData(), nil
 }
 
-// Load loads a chunk from CompoundTag
-func (chunk *Chunk) Load(tag *nbt.Compound) error {
+// Save saves the chunk, returns CompoundTag
+func (chunk *Chunk) Save() (*nbt.Compound, error) {
+	return nil, nil // TODO
+}
+
+// ChunkFormat is a chunk format for a version
+type ChunkFormat interface {
+	Read(tag *nbt.Compound) (*Chunk, error)
+}
+
+// ChunkFormatV112 is a chunk format for v1.12
+type ChunkFormatV112 struct {
+}
+
+func (format *ChunkFormatV112) Read(tag *nbt.Compound) (*Chunk, error) {
+	chunk := NewChunk(0, 0, format)
+
 	com, err := tag.GetCompound("Level")
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	xPos, err := com.GetInt("xPos")
+	if err != nil {
+		return nil, err
+	}
+
+	zPos, err := com.GetInt("zPos")
+	if err != nil {
+		return nil, err
+	}
+
+	chunk.x = int(xPos)
+	chunk.y = int(zPos)
 
 	// Biomes
-	biomes, err := com.GetIntArray("Biomes")
-	if err != nil {
-		return err
-	}
+	if com.Has("Biomes") {
+		biomes, err := com.GetByteArray("Biomes")
+		if err != nil {
+			return nil, err
+		}
 
-	chunk.biomes = make([]int, len(biomes))
-	for i, biome := range biomes {
-		chunk.biomes[i] = int(biome)
+		chunk.biomes = make([]int, len(biomes))
+		for i, biome := range biomes {
+			chunk.biomes[i] = int(biome)
+		}
 	}
 
 	// Subchunks
 	sections, err := com.GetList("Sections")
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	subchunkFormat := &SubChunkFormatV112{}
 
 	chunk.subChunks = make([]*SubChunk, 16)
 	for _, entry := range sections {
 		sec, ok := entry.(*nbt.Compound)
 		if !ok {
-			return fmt.Errorf("couldn't convert to *Compound")
+			return nil, fmt.Errorf("couldn't convert to *Compound")
 		}
 
-		sub, err := chunk.SubChunkFormat.Read(sec)
+		sub, err := subchunkFormat.Read(sec)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		chunk.subChunks[sub.Y] = sub
 	}
 
-	return nil
+	return chunk, nil
 }
 
-// Save saves the chunk, returns CompoundTag
-func (chunk *Chunk) Save() (*nbt.Compound, error) {
-	return nil, nil // TODO
+// ChunkFormatV113 is a chunk format for v1.13
+type ChunkFormatV113 struct {
+}
+
+func (format *ChunkFormatV113) Read(tag *nbt.Compound) (*Chunk, error) {
+	chunk := NewChunk(0, 0, format)
+
+	com, err := tag.GetCompound("Level")
+	if err != nil {
+		return nil, err
+	}
+
+	xPos, err := com.GetInt("xPos")
+	if err != nil {
+		return nil, err
+	}
+
+	zPos, err := com.GetInt("zPos")
+	if err != nil {
+		return nil, err
+	}
+
+	chunk.x = int(xPos)
+	chunk.y = int(zPos)
+
+	// Biomes
+	if com.Has("Biomes") {
+		biomes, err := com.GetIntArray("Biomes")
+		if err != nil {
+			return nil, err
+		}
+
+		chunk.biomes = make([]int, len(biomes))
+		for i, biome := range biomes {
+			chunk.biomes[i] = int(biome)
+		}
+	}
+
+	// Subchunks
+	sections, err := com.GetList("Sections")
+	if err != nil {
+		return nil, err
+	}
+
+	subchunkFormat := &SubChunkFormatV113{}
+
+	chunk.subChunks = make([]*SubChunk, 16)
+	for _, entry := range sections {
+		sec, ok := entry.(*nbt.Compound)
+		if !ok {
+			return nil, fmt.Errorf("couldn't convert to *Compound")
+		}
+
+		sub, err := subchunkFormat.Read(sec)
+		if err != nil {
+			return nil, err
+		}
+
+		chunk.subChunks[sub.Y] = sub
+	}
+
+	return nil, nil
 }

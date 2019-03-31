@@ -18,11 +18,13 @@ import (
 	"github.com/beito123/nbt"
 )
 
+// SubChunkFormat is a subchunk format for a version
 type SubChunkFormat interface {
 	Read(tag *nbt.Compound) (*SubChunk, error)
 }
 
-type SubChunkFormatV112 struct { // before v1.13
+// SubChunkFormatV112 is a subchunk format for v1.12 and before
+type SubChunkFormatV112 struct {
 }
 
 func (SubChunkFormatV112) Read(tag *nbt.Compound) (*SubChunk, error) {
@@ -94,9 +96,10 @@ func (SubChunkFormatV112) Read(tag *nbt.Compound) (*SubChunk, error) {
 		return nil, err
 	}
 
-	return nil, nil
+	return sub, nil
 }
 
+// SubChunkFormatV113 is a subchunk format for v1.13 and after
 type SubChunkFormatV113 struct { // after v1.13
 }
 
@@ -190,6 +193,7 @@ func (SubChunkFormatV113) Write(sub *SubChunk) (*nbt.Compound, error) {
 	return nil, nil
 }
 
+// NewSubChunk returns new subchunk
 func NewSubChunk(y byte) *SubChunk {
 	return &SubChunk{
 		Y:          y,
@@ -213,7 +217,7 @@ type SubChunk struct {
 // At returns index from subchunk coordinates
 // xyz need to be more 0 and less 15
 func (SubChunk) At(x, y, z int) int {
-	return y<<16 | z<<8 | x
+	return y<<8 | z<<4 | x
 }
 
 // Vaild vailds subchunk coordinates

@@ -66,10 +66,20 @@ func LoadV112() List {
 			Meta: 0,
 		}
 
+		list[ToNumberID(value.ID)] = list[name]
+
 		for _, val := range value.Variations {
 			n := name + ":" + strconv.Itoa(val.Meta)
 
-			list[MinecraftPrefix+n] = &BlockData{
+			list[n] = &BlockData{
+				Name: name,
+				//DisplayName: val.DisplayName,
+				ID:   value.ID,
+				Meta: val.Meta,
+			}
+
+			nid := ToNumberIDMeta(value.ID, val.Meta)
+			list[nid] = &BlockData{
 				Name: name,
 				//DisplayName: val.DisplayName,
 				ID:   value.ID,

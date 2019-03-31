@@ -11,22 +11,10 @@ package block
 
 import (
 	"strconv"
-	"strings"
 )
 
 // List is a compatibility data for block
 type List map[string]*BlockData
-
-// GetName returns block name from list by id
-func (l List) GetName(id int) (string, bool) {
-	for name, bl := range l {
-		if bl.ID == id {
-			return name, true
-		}
-	}
-
-	return "", false
-}
 
 // BlockListV112 is a block data for v1.12
 var BlockListV112 = LoadV112()
@@ -45,12 +33,12 @@ type BlockData struct {
 
 // FromBlockID returns blockData from old block id and meta
 func FromBlockID(id int, meta int) *BlockData {
-	name, ok := BlockListV112.GetName(id)
+	data, ok := BlockListV112[ToNumberID(id)]
 	if !ok {
 		return nil
 	}
 
-	name = GetV112ToV113(name, meta)
+	name := GetV112ToV113(data.Name, meta)
 
 	return &BlockData{
 		Name:       name,
@@ -58,22 +46,20 @@ func FromBlockID(id int, meta int) *BlockData {
 	}
 }
 
+func ToNumberID(id int) string {
+	return strconv.Itoa(id)
+}
+
+func ToNumberIDMeta(id int, meta int) string {
+	return strconv.Itoa(id) + ":" + strconv.Itoa(meta)
+}
+
 // MinecraftPrefix is a block prefix
 const MinecraftPrefix = "minecraft:"
 
 // GetV112ToV113 gets a block name which is converted from v1.12 to v1.13
 func GetV112ToV113(name string, meta int) string {
-	index := strings.Index(name, ":")
-	if index != -1 {
-		prefix := name[:index+1]
-		if prefix != MinecraftPrefix {
-			return name
-		}
-
-		name = name[index:]
-	}
-
-	data, ok := V112ToV113[name+strconv.Itoa(meta)]
+	data, ok := V112ToV113[name+":"+strconv.Itoa(meta)]
 	if !ok {
 		data, ok := V112ToV113[name]
 		if !ok {
@@ -86,8 +72,20 @@ func GetV112ToV113(name string, meta int) string {
 	return data
 }
 
-// V112ToV113 is compatibility data between v1.12 and v1.13
-var V112ToV113 = map[string]string{
+func setPrefix(prefix string, m map[string]string) map[string]string {
+	n := make(map[string]string)
+	for k, v := range m {
+		n[prefix+k] = prefix + v
+	}
+
+	return n
+}
+
+// V112ToV113 is compatibility data between v1.12 and v1.13 with minecraft prefix
+var V112ToV113 = setPrefix(MinecraftPrefix, v112Tov113)
+
+// v112Tov113 is compatibility data between v1.12 and v1.13
+var v112Tov113 = map[string]string{
 	/*
 		* TODO
 		flower_pot
@@ -141,7 +139,7 @@ var V112ToV113 = map[string]string{
 		"black_wall_banner":              []string{"wall_banner"}
 	*/
 
-	//Stone
+	// Stone
 	"stone:0": "stone",
 	"stone:1": "granite",
 	"stone:2": "polished_granite",
@@ -150,15 +148,15 @@ var V112ToV113 = map[string]string{
 	"stone:5": "andesite",
 	"stone:6": "polished_andesite",
 
-	//Glassblock
-	"glass": "glass_block",
+	// Grass block
+	"grass": "grass_block",
 
-	//Dirt
+	// Dirt
 	"dirt:0": "dirt",
 	"dirt:1": "coarse_dirt",
 	"dirt:2": "podzol",
 
-	//WoodenPlanks
+	// WoodenPlanks
 	"planks:0": "oak_planks",
 	"planks:1": "spruce_planks",
 	"planks:2": "birch_planks",
@@ -166,7 +164,7 @@ var V112ToV113 = map[string]string{
 	"planks:4": "acacia_planks",
 	"planks:5": "dark_oak_planks",
 
-	//Sapling
+	// Sapling
 	"sapling:0": "oak_sapling",
 	"sapling:1": "spruce_sapling",
 	"sapling:2": "birch_sapling",
@@ -174,11 +172,11 @@ var V112ToV113 = map[string]string{
 	"sapling:4": "acacia_sapling",
 	"sapling:5": "dark_oak_sapling",
 
-	//Sand
+	// Sand
 	"sand:0": "sand",
 	"sand:1": "red_sand",
 
-	//Log
+	// Log
 	"log:0":   "oak_log",
 	"log:4":   "oak_log",
 	"log:8":   "oak_log",
@@ -204,7 +202,7 @@ var V112ToV113 = map[string]string{
 	"log2:9":  "dark_oak_log",
 	"log2:13": "dark_oak_log",
 
-	//Leaves
+	// Leaves
 	"leaves:0":   "oak_leaves",
 	"leaves:4":   "oak_leaves",
 	"leaves:8":   "oak_leaves",
@@ -230,34 +228,35 @@ var V112ToV113 = map[string]string{
 	"leaves2:9":  "dark_oak_leaves",
 	"leaves2:13": "dark_oak_leaves",
 
-	//Sponge
+	// Sponge
 	"sponge:0": "sponge",
 	"sponge:1": "wet_sponge",
 
-	//Sandstone
+	// Sandstone
 	"sandstone:0": "sandstone",
 	"sandstone:1": "chiseled_sandstone",
 	"sandstone:2": "cut_sandstone",
 
-	//NoteBlock
+	// NoteBlock
 	"noteblock": "note_block",
 
-	//PoweredRail
+	// PoweredRail
 	"powered_rail": "golden_rail",
 
-	//Cobweb
+	// Cobweb
 	"cobweb": "web",
 
-	//Grass
+	// Grass
 	"tallgrass":   "dead_bush",
-	"deadbush":    "dead_bush",
+	"tallgrass:0": "dead_bush",
 	"tallgrass:1": "grass",
 	"tallgrass:2": "fern",
+	"deadbush":    "dead_bush",
 
-	//MoveingPiston
+	// MoveingPiston
 	"piston_extension": "moving_piston",
 
-	//Wool
+	// Wool
 	"wool:0":  "white_wool",
 	"wool:1":  "orange_wool",
 	"wool:2":  "magenta_wool",
@@ -275,7 +274,7 @@ var V112ToV113 = map[string]string{
 	"wool:14": "red_wool",
 	"wool:15": "black_wool",
 
-	//Flower
+	// Flower
 	"yellow_flower": "dandelion",
 	"red_flower:0":  "poppy",
 	"red_flower:1":  "blue_orchid",
@@ -287,7 +286,7 @@ var V112ToV113 = map[string]string{
 	"red_flower:7":  "pink_tulip",
 	"red_flower:8":  "oxeye_daisy",
 
-	//Wooden slab
+	// Wooden slab
 
 	"wooden_slab:0":  "oak_slab",
 	"wooden_slab:8":  "oak_slab",
@@ -302,7 +301,7 @@ var V112ToV113 = map[string]string{
 	"wooden_slab:5":  "dark_oak_slab",
 	"wooden_slab:13": "dark_oak_slab",
 
-	//Stone slab
+	// Stone slab
 	"stone_slab:0":         "stone_slab",
 	"stone_slab:8":         "stone_slab",
 	"double_stone_slab:0":  "stone_slab",
