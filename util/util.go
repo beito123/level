@@ -10,6 +10,7 @@ package util
 */
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 )
@@ -33,4 +34,10 @@ func ExistDir(dir string) bool {
 
 func To(root string, child string) string {
 	return root + string(filepath.Separator) + child
+}
+
+// Math
+
+func CeilInt(x float64) int {
+	return int(math.Ceil(x))
 }
