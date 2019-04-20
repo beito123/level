@@ -11,14 +11,6 @@ package level
 
 type Dimension int
 
-func (d Dimension) ToMCBE() byte {
-	switch d {
-	case OverWorld:
-	}
-
-	return 0
-}
-
 const (
 	OverWorld Dimension = iota
 	Nether

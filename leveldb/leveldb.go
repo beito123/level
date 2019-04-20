@@ -11,6 +11,7 @@ package leveldb
 
 import (
 	"fmt"
+	"strings"
 
 	lvldb "github.com/beito123/goleveldb/leveldb"
 	"github.com/beito123/goleveldb/leveldb/filter"
@@ -36,6 +37,7 @@ func NewWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 
 	return &LevelDB{
 		Database: db,
+		chunks:   make(map[int]*Chunk),
 	}, nil
 }
 
@@ -51,51 +53,122 @@ func LoadWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 
 	return &LevelDB{
 		Database: db,
+		chunks:   make(map[int]*Chunk),
 	}, nil
+}
+
+// NewBlockState returns new BlockState
+func NewBlockState(name string, value int) *BlockState {
+	return &BlockState{
+		name:  strings.ToLower(name),
+		value: value,
+	}
+}
+
+// BlockState is a block information
+type BlockState struct {
+	name  string
+	value int
+}
+
+// Name returns block name
+func (block *BlockState) Name() string {
+	return block.name
+}
+
+// Value returns block value
+func (block *BlockState) Value() int {
+	return block.value
+}
+
+func (block *BlockState) Equal(b *BlockState) bool {
+	return block.name == b.name && block.value == b.value
 }
 
 // LevelDB is a level format for mcbe
 type LevelDB struct {
 	Database *lvldb.DB
+
+	Format    ChunkFormat
+	Dimension level.Dimension
+
+	chunks map[int]*Chunk
+}
+
+func (lvl *LevelDB) at(x, y int) int {
+	return y<<16 | x
 }
 
 // LoadChunk loads a chunk.
 // If create is true, generates a chunk.
-func (lvl *LevelDB) LoadChunk(x, y int, create bool) bool {
-	return false
+func (lvl *LevelDB) LoadChunk(x, y int) error {
+	if lvl.IsLoadedChunk(x, y) {
+		return fmt.Errorf("level.leveldb: already loaded the chunk")
+	}
+
+	chunk, err := lvl.Format.Read(x, y, lvl.Dimension, lvl.Database)
+	if err != nil {
+		return err
+	}
+
+	lvl.chunks[lvl.at(x, y)] = chunk
+
+	return nil
 }
 
 // UnloadChunk unloads a chunk.
-// If safe is false, unloads even when players are there.
-func (lvl *LevelDB) UnloadChunk(x, y int, safe bool) bool {
+func (lvl *LevelDB) UnloadChunk(x, y int) error {
+	return nil
+}
+
+// GenerateChunk generates a chunk
+func (lvl *LevelDB) GenerateChunk(x, y int) error {
+	return nil
+}
+
+// HasGeneratedChunk returns whether the chunk is generaged
+func (lvl *LevelDB) HasGeneratedChunk(x, y int) bool {
 	return false
 }
 
 // IsLoadedChunk returns weather a chunk is loaded.
 func (lvl *LevelDB) IsLoadedChunk(x, y int) bool {
-	return false
+	_, ok := lvl.chunks[lvl.at(x, y)]
+
+	return ok
 }
 
 // SaveChunk saves a chunk.
-func (lvl *LevelDB) SaveChunk(x, y int) bool {
-	return false
+func (lvl *LevelDB) SaveChunk(x, y int) error {
+	return nil
 }
 
 // SaveChunks saves all chunks.
-func (lvl *LevelDB) SaveChunks() {
-
-}
-
-// Chunk returns a chunk.
-// If it's not loaded, loads the chunks.
-// If create is true, generates a chunk.
-func (lvl *LevelDB) Chunk(x, y int, create bool) level.Chunk {
+func (lvl *LevelDB) SaveChunks() error {
 	return nil
 }
 
-// Chunks retuns loaded chunks.
-func (lvl *LevelDB) Chunks() []level.Chunk {
-	return nil
+// Chunk returns a loaded chunk.
+func (lvl *LevelDB) Chunk(x, y int) (level.Chunk, error) {
+	chunk, ok := lvl.chunks[lvl.at(x, y)]
+	if !ok {
+		return nil, fmt.Errorf("level.leveldb: not loaded the chunk")
+	}
+
+	return chunk, nil
+}
+
+// LoadedChunks retuns loaded chunks.
+func (lvl *LevelDB) LoadedChunks() []level.Chunk {
+	result := make([]level.Chunk, len(lvl.chunks))
+
+	count := 0
+	for _, chunk := range lvl.chunks {
+		result[count] = chunk
+		count++
+	}
+
+	return result
 }
 
 const (
@@ -115,7 +188,7 @@ const (
 // ChunkFormat is a chunk format reader and writer
 type ChunkFormat interface {
 	// Read reads a chunk by x, y and dimension
-	Read(x, y, dimension level.Dimension, db *lvldb.DB) (*Chunk, error)
+	Read(x, y int, dimension level.Dimension, db *lvldb.DB) (*Chunk, error)
 	Write(chunk *Chunk, db *lvldb.DB)
 }
 
@@ -140,10 +213,36 @@ func (format *ChunkFormatV120) Read(x, y int, dimension level.Dimension, db *lvl
 			return nil, err
 		}
 
+		stateKey := getChunkKey(x, y, dimension, TagFinalizedState, -1)
+
+		hasState, err := db.Has(stateKey, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if hasState { // after 1.1
+			state, err := db.Get(key, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			if len(state) == 0 {
+				return nil, fmt.Errorf("level.leveldb: invaild finalization state")
+			}
+
+			var ok bool
+			sub.Finalization, ok = GetFinalization(int(state[0]))
+			if !ok {
+				return nil, fmt.Errorf("level.leveldb: unknown finalization state id: %d", state)
+			}
+		} else {
+			sub.Finalization = Unsupported
+		}
+
 		chunk.subChunks[i] = sub
 	}
 
-	return nil, nil
+	return chunk, nil
 }
 
 func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, err error) {
@@ -159,6 +258,7 @@ func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, er
 		subFormat := &SubChunkFormatV130{
 			RuntimeIDList: format.RuntimeIDList,
 		}
+
 		sub, err = subFormat.Read(y, b)
 		if err != nil {
 			return nil, nil
@@ -167,9 +267,6 @@ func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, er
 	}
 
 	return sub, nil
-}
-
-type ChunkFormatV090 struct { // TODO?
 }
 
 func getChunkKey(x int, y int, dimension level.Dimension, tag byte, sid int) []byte {

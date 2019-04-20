@@ -10,7 +10,7 @@ package level
 */
 
 // Level is a simple level loader
-// I will implement later
+// I will implement later // support high level access
 type Level struct {
 	// Manage level provider and more...
 	// Load level.dat and manage level data (name, spaen and etc..)
@@ -20,29 +20,31 @@ type Level struct {
 type Format interface {
 
 	// LoadChunk loads a chunk.
-	// If create is true, generates a chunk.
-	LoadChunk(x, y int, create bool) bool
+	LoadChunk(x, y int) error
 
 	// UnloadChunk unloads a chunk.
-	// If safe is false, unloads even when players are there.
-	UnloadChunk(x, y int, safe bool) bool
+	UnloadChunk(x, y int) error
+
+	// GenerateChunk generates a chunk
+	GenerateChunk(x, y int) error
+
+	// HasGeneratedChunk returns whether the chunk is generaged
+	HasGeneratedChunk(x, y int) bool
 
 	// IsLoadedChunk returns weather a chunk is loaded.
 	IsLoadedChunk(x, y int) bool
 
 	// SaveChunk saves a chunk.
-	SaveChunk(x, y int) bool
+	SaveChunk(x, y int) error
 
 	// SaveChunks saves all chunks.
-	SaveChunks()
+	SaveChunks() error
 
-	// Chunk returns a chunk.
-	// If it's not loaded, loads the chunks.
-	// If create is true, generates a chunk.
-	Chunk(x, y int, create bool) Chunk
+	// Chunk returns a loaded chunk.
+	Chunk(x, y int) (Chunk, error)
 
-	// Chunks retuns loaded chunks.
-	Chunks() []Chunk
+	// LoadedChunks returns loaded chunks.
+	LoadedChunks() []Chunk
 }
 
 // Chunk is a simple interface for chunk
@@ -60,15 +62,14 @@ type Chunk interface {
 	// SetY set y coordinate
 	SetY(y int)
 
-	// GetBlockID gets a block id on xyz
-	GetBlockID(x, y, z int) (id int, err error)
+	// GetBlock gets a BlockState at chunk coordinate
+	GetBlock(x, y, z int) (BlockState, error)
 
-	// GetBlockData gets a block id on xyz
-	GetBlockData(x, y, z int) (data int, err error)
+	// SetBlock set a BlockState at chunk coordinate
+	SetBlock(x, y, z int, state BlockState) error
+}
 
-	// SetBlockID set a block on xyz
-	SetBlockID(x, y, z, id int) error
-
-	// SetBlockData set a block on xyz
-	SetBlockData(x, y, z, id int) error
+// BlockState is a block information
+type BlockState interface {
+	Name() string
 }
