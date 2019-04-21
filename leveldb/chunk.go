@@ -135,7 +135,7 @@ func (chunk *Chunk) GetBlockAtStorage(x, y, z, index int) (*BlockState, error) {
 		return chunk.DefaultBlock, nil // Air
 	}
 
-	return sub.AtBlock(x, y%16, z, index)
+	return sub.AtBlock(x&15, y&15, z&15, index)
 }
 
 // SetBlock set a BlockState at chunk coordinate

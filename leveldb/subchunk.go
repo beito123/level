@@ -25,7 +25,8 @@ type BlockStorage struct {
 }
 
 func (BlockStorage) At(x, y, z int) int {
-	return y<<8 | z<<4 | x
+	//return y<<8 | z<<4 | x
+	return x<<8 | z<<4 | y
 }
 
 // Vaild vailds blockstorage coordinates
@@ -69,12 +70,6 @@ type SubChunk struct {
 	Y byte
 
 	Storages []*BlockStorage
-}
-
-// At returns index from subchunk coordinates
-// xyz need to be more 0 and less 15
-func (SubChunk) At(x, y, z int) int {
-	return y<<8 | z<<4 | x
 }
 
 // Vaild vailds subchunk coordinates
