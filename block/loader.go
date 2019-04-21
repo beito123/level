@@ -58,7 +58,7 @@ func LoadV112() List {
 	for _, value := range data {
 		name := MinecraftPrefix + value.Name
 
-		list[name] = &BlockData{
+		list[name] = &Block{
 			Name: name,
 			//DisplayName: value.DisplayName,
 
@@ -71,7 +71,7 @@ func LoadV112() List {
 		for _, val := range value.Variations {
 			n := name + ":" + strconv.Itoa(val.Meta)
 
-			list[n] = &BlockData{
+			list[n] = &Block{
 				Name: name,
 				//DisplayName: val.DisplayName,
 				ID:   value.ID,
@@ -79,7 +79,7 @@ func LoadV112() List {
 			}
 
 			nid := ToNumberIDMeta(value.ID, val.Meta)
-			list[nid] = &BlockData{
+			list[nid] = &Block{
 				Name: name,
 				//DisplayName: val.DisplayName,
 				ID:   value.ID,
@@ -133,7 +133,7 @@ func LoadV113() List {
 	for _, value := range data {
 		name := MinecraftPrefix + value.Name
 
-		list[name] = &BlockData{
+		list[name] = &Block{
 			Name: name,
 			//DisplayName: value.DisplayName,
 

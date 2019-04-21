@@ -14,7 +14,7 @@ import (
 )
 
 // List is a compatibility data for block
-type List map[string]*BlockData
+type List map[string]*Block
 
 // BlockListV112 is a block data for v1.12
 var BlockListV112 = LoadV112()
@@ -22,8 +22,8 @@ var BlockListV112 = LoadV112()
 // BlockListV113 is a block data for v1.13
 var BlockListV113 = LoadV113()
 
-// BlockData is a block data
-type BlockData struct {
+// Block is a common block data
+type Block struct {
 	Name       string // minecraft:dirt
 	Properties map[string]string
 
@@ -31,8 +31,8 @@ type BlockData struct {
 	Meta int
 }
 
-// FromBlockID returns blockData from old block id and meta
-func FromBlockID(id int, meta int) *BlockData {
+// FromBlockID returns Block from old block id and meta
+func FromBlockID(id int, meta int) *Block {
 	data, ok := BlockListV112[ToNumberID(id)]
 	if !ok {
 		return nil
@@ -40,7 +40,7 @@ func FromBlockID(id int, meta int) *BlockData {
 
 	name := GetV112ToV113(data.Name, meta)
 
-	return &BlockData{
+	return &Block{
 		Name:       name,
 		Properties: make(map[string]string), // TODO: support
 	}

@@ -288,12 +288,12 @@ type BlockState struct {
 	OldMeta byte
 }
 
-func (bs *BlockState) ToBlockData() *block.BlockData {
+func (bs *BlockState) ToBlockData() *block.Block {
 	if bs.IsOld {
 		return block.FromBlockID(int(bs.OldID), int(bs.OldMeta))
 	}
 
-	return &block.BlockData{
+	return &block.Block{
 		Name:       bs.Name,
 		Properties: bs.Properties,
 	}

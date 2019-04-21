@@ -22,27 +22,36 @@ import (
 	"regexp"
 	"sync"
 
-	"github.com/pbnjay/pixfont"
-	"gopkg.in/cheggaaa/pb.v1"
+	"github.com/beito123/level"
+	"github.com/pkg/errors"
 
-	"github.com/beito123/level/anvil"
+	"github.com/beito123/level/block"
+
+	"github.com/beito123/level/leveldb"
+
+	"github.com/pbnjay/pixfont"
+
 	"github.com/beito123/level/util"
 )
 
 func main() {
-	// Test :P
-
 	err := test()
 	if err != nil {
-		panic(err)
+		fmt.Printf("Error: %s", errors.WithStack(err))
 	}
 }
 
 func test() error {
 	resPath := "./resources/vanilla"
-	regionPath := "./region"
 
-	generator, err := NewMapGenerator(resPath, regionPath)
+	lvl, err := leveldb.New("./db")
+	if err != nil {
+		return err
+	}
+
+	lvl.Format = &leveldb.ChunkFormatV120{}
+
+	generator, err := NewMapGenerator(resPath, lvl)
 	if err != nil {
 		return err
 	}
@@ -58,15 +67,15 @@ func test() error {
 	generator.Textures.PathList["minecraft:grass"] = resPath + "/textures/blocks/" + "grass_carried.png"
 	generator.Textures.PathList["minecraft:grass_block"] = resPath + "/textures/blocks/" + "grass_carried.png"
 
-	scale := 64
+	scale := 8
 	line := 16 * 16 * scale
 	img := image.NewRGBA(image.Rect(0, 0, line, line))
 
-	bx := -24
-	by := -16
+	bx := 0
+	by := 0
 	//base := 0
 
-	bar := pb.StartNew(scale * scale)
+	//bar := pb.StartNew(scale * scale)
 	/*making := &MakingImage{
 		Delay:  1,
 		Bounds: image.Rect(0, 0, line, line),
@@ -86,7 +95,7 @@ func test() error {
 				return err
 			}
 
-			bar.Increment()
+			//bar.Increment()
 
 			if gimg == nil {
 				continue
@@ -101,7 +110,7 @@ func test() error {
 		}
 	}
 
-	bar.FinishPrint("complete!")
+	//bar.FinishPrint("complete!")
 
 	path := "./chunks.png"
 
@@ -119,7 +128,7 @@ func test() error {
 // NewMapGenerator returns new MapGenerator
 // path is a dir path for offical resource pack
 // rpath is a region dir path
-func NewMapGenerator(path, rpath string) (*MapGenerator, error) {
+func NewMapGenerator(path string, lvl level.Format) (*MapGenerator, error) {
 	tm := NewTextureManager()
 
 	err := tm.LoadResourcePack(path)
@@ -128,42 +137,24 @@ func NewMapGenerator(path, rpath string) (*MapGenerator, error) {
 	}
 
 	return &MapGenerator{
-		Path:     rpath,
+		Level:    lvl,
 		Textures: tm,
 	}, nil
 }
 
 type MapGenerator struct {
-	Path          string
+	Level         level.Format
 	Textures      *TextureManager
 	EnabledMaking bool
 	Making        []image.Image
-
-	loader *anvil.RegionLoader
 }
 
 func (mg *MapGenerator) Clone(tm *TextureManager) *MapGenerator {
 	return &MapGenerator{
-		Path:          mg.Path,
 		Textures:      tm,
 		EnabledMaking: mg.EnabledMaking,
 		Making:        mg.Making,
 	}
-}
-
-func (mg *MapGenerator) HasLoaded() bool {
-	return mg.loader != nil
-}
-
-func (mg *MapGenerator) LoadRegions() error {
-	loader, err := anvil.NewRegionLoader(mg.Path, anvil.RegionFileAnvil)
-	if err != nil {
-		return err
-	}
-
-	mg.loader = loader
-
-	return nil
 }
 
 // Generate generates a chunk image
@@ -171,70 +162,71 @@ func (mg *MapGenerator) LoadRegions() error {
 // x and y are chunk coordinates
 // if it's returned nil as Image, the chunk is not created
 func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
-	if !mg.HasLoaded() {
-		err := mg.LoadRegions()
+	if mg.Level.HasGeneratedChunk(x, y) {
+		return nil, nil
+	}
+
+	if !mg.Level.IsLoadedChunk(x, y) {
+		err := mg.Level.LoadChunk(x, y)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	region, err := mg.loader.LoadRegion(x>>5, y>>5, false)
-	if err != nil {
-		return nil, err
+	chunk, ok := mg.Level.Chunk(x, y)
+	if !ok {
+		return nil, fmt.Errorf("unknown error")
 	}
-
-	b, err := region.ReadChunk(x&31, y&31)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(b) == 0 {
-		return nil, nil
-	}
-
-	chunk, err := anvil.ReadChunk(x&15, y&15, b)
-	if err != nil {
-		return nil, err
-	}
-
-	subchunks := chunk.SubChunks()
 
 	maker := ChunkImageMaker{}
-	maker.EnabledFreeMap = true
+	//maker.EnabledFreeMap = true
 	maker.Ready()
 
-	//for _, sub := range subchunks {
-	for i := 0; i < len(subchunks); i++ {
-		sub := subchunks[15-i]
-		if sub == nil {
-			continue
-		}
+	skipped := make(map[string]bool)
 
-		//fmt.Printf("test: %d\n", sub.Y)
+	/*c, ok := chunk.(*leveldb.Chunk)
+	if ok {
+		fmt.Printf("Fin: %d", c.Finalization)
+	}*/
 
-		maker.ResetBlockData()
+	for y := 0; y < 256; y++ {
+		for z := 0; z < 16; z++ {
+			for x := 0; x < 16; x++ {
+				bl, err := chunk.GetBlock(x, y, z)
+				if err != nil {
+					return nil, err
+				}
 
-		for i, bs := range sub.Palette {
-			bl := bs.ToBlockData()
+				var name string
 
-			if !mg.Textures.HasTexture(bl.Name) {
-				//fmt.Printf("Ignore palette(id:%d, name: %s)\n", i, bl.Name)
-				continue
-			}
+				b, ok := block.BlockListV112[bl.Name()]
+				if ok {
+					name = b.Name
+				} else {
+					name = bl.Name()
+				}
 
-			img, err := mg.Textures.GetTexture(bl.Name)
-			if err != nil {
-				return nil, fmt.Errorf("happened errors while processing palette(id:%d, name: %s) error:%s", i, bl.Name, err)
-			}
+				if name != "minecraft:air" {
+					_, ok := skipped[name]
+					if !ok && !maker.HasBlockData(name) {
+						if !mg.Textures.HasTexture(name) {
+							skipped[name] = true
+							fmt.Printf("Ignore palette(name: %s)\n", name)
+							continue
+						}
 
-			//fmt.Printf("Added palette(id:%d, name: %s)\n", i, bl.Name)
+						img, err := mg.Textures.GetTexture(name)
+						if err != nil {
+							return nil, fmt.Errorf("happened errors while processing palette(name: %s) error:%s", name, err)
+						}
 
-			maker.AddBlockData(bl.Name, img)
-		}
+						maker.AddBlockData(name, img)
+					}
 
-		for y := 0; y < 16; y++ {
-			for z := 0; z < 16; z++ {
-				for x := 0; x < 16; x++ {
+					maker.Add(x, z, name)
+				}
+
+				/*
 					bl, err := sub.AtBlock(x, 15-y, z)
 					if err != nil {
 						return nil, err
@@ -245,12 +237,9 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 					if maker.IsFree(x, z) && name != "minecraft:air" {
 						maker.Add(x, z, name)
 					}
-				}
-			}
-		}
 
-		if maker.IsFull() {
-			break
+				*/
+			}
 		}
 	}
 
@@ -502,6 +491,12 @@ func (mk *ChunkImageMaker) Add(x, y int, name string) {
 
 func (mk *ChunkImageMaker) ResetBlockData() {
 	mk.BlockList = make(map[string]image.Image)
+}
+
+func (mk *ChunkImageMaker) HasBlockData(name string) bool {
+	_, ok := mk.BlockList[name]
+
+	return ok
 }
 
 func (mk *ChunkImageMaker) AddBlockData(name string, img image.Image) {

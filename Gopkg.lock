@@ -2,12 +2,33 @@
 
 
 [[projects]]
-  digest = "1:130750567b34e436b40afa5b5f443c2678ffa4b9446f63fb5cd53f80a9e8bfa8"
+  branch = "master"
+  digest = "1:c1727bcbbca5e4f91263d97052db48b0b2299595df7104c45b9876662df23d4b"
   name = "github.com/beito123/binary"
   packages = ["."]
   pruneopts = "UT"
-  revision = "a1baac3c95b9ffc0794c6c67f8d1ea3e0b5afadc"
-  version = "v3.0.1"
+  revision = "952fe0c43d2dc794717635c3a84d716bb17f6c75"
+
+[[projects]]
+  branch = "master"
+  digest = "1:23c0ff80d7f48715378e9e50000fa3a1793de587679540e52e105f7651c71e3d"
+  name = "github.com/beito123/goleveldb"
+  packages = [
+    "leveldb",
+    "leveldb/cache",
+    "leveldb/comparer",
+    "leveldb/errors",
+    "leveldb/filter",
+    "leveldb/iterator",
+    "leveldb/journal",
+    "leveldb/memdb",
+    "leveldb/opt",
+    "leveldb/storage",
+    "leveldb/table",
+    "leveldb/util",
+  ]
+  pruneopts = "UT"
+  revision = "a7a80d23d9db7bdb7f16880ad4984585e8da9473"
 
 [[projects]]
   digest = "1:baaa09daf3d831bb770228e65d57b4b44c7df43f05b98b865842164889ab9ebd"
@@ -16,6 +37,14 @@
   pruneopts = "UT"
   revision = "bf4b66d0a5f069a525b569734c794695b4b12949"
   version = "v1.2.1"
+
+[[projects]]
+  digest = "1:e4f5819333ac698d294fe04dbf640f84719658d5c7ce195b10060cc37292ce79"
+  name = "github.com/golang/snappy"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "2a8bb927dd31d8daada140a5d09578521ce5c36a"
+  version = "v0.0.1"
 
 [[projects]]
   branch = "master"
@@ -42,37 +71,59 @@
   version = "v1.4.0"
 
 [[projects]]
-  digest = "1:0356f3312c9bd1cbeda81505b7fd437501d8e778ab66998ef69f00d7f9b3a0d7"
-  name = "github.com/mattn/go-runewidth"
+  digest = "1:f5a2051c55d05548d2d4fd23d244027b59fbd943217df8aa3b5e170ac2fd6e1b"
+  name = "github.com/json-iterator/go"
   packages = ["."]
   pruneopts = "UT"
-  revision = "3ee7d812e62a0804a7d0a324e0249ca2db3476d3"
-  version = "v0.0.4"
+  revision = "0ff49de124c6f76f8494e194af75bde0f1a49a29"
+  version = "v1.1.6"
+
+[[projects]]
+  digest = "1:33422d238f147d247752996a26574ac48dcf472976eda7f5134015f06bf16563"
+  name = "github.com/modern-go/concurrent"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "bacd9c7ef1dd9b15be4a9909b8ac7a4e313eec94"
+  version = "1.0.3"
+
+[[projects]]
+  digest = "1:e32bdbdb7c377a07a9a46378290059822efdce5c8d96fe71940d87cb4f918855"
+  name = "github.com/modern-go/reflect2"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "4b7aa43c6742a2c18fdef89dd197aaae7dac7ccd"
+  version = "1.0.1"
 
 [[projects]]
   branch = "master"
-  digest = "1:5637b3b43405643229e55140bb3049dfa7d73957ba9ecfccc31cdadbfbe0b1f9"
-  name = "golang.org/x/sys"
-  packages = ["unix"]
-  pruneopts = "UT"
-  revision = "f49334f85ddcf0f08d7fb6dd7363e9e6d6b777eb"
-
-[[projects]]
-  digest = "1:d219400f09c151f0ada918bab650ef46f7ebdb1ff4fea923fdcb839481ec7ec1"
-  name = "gopkg.in/cheggaaa/pb.v1"
+  digest = "1:31fd6971b254a5d0e81f5a4abc16bf3be091e94bf6b006ba63f0508c7fcf74dc"
+  name = "github.com/pbnjay/pixfont"
   packages = ["."]
   pruneopts = "UT"
-  revision = "f907f6f5dd81f77c2bbc1cde92e4c5a04720cb11"
-  version = "v1.0.28"
+  revision = "401bb7c6aee2f4d075297d472b878770901ce2b1"
+
+[[projects]]
+  digest = "1:cf31692c14422fa27c83a05292eb5cbe0fb2775972e8f1f8446a71549bd8980b"
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "ba968bfe8b2f7e042a574c888954fccecfa385b4"
+  version = "v0.8.1"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
     "github.com/beito123/binary",
+    "github.com/beito123/goleveldb/leveldb",
+    "github.com/beito123/goleveldb/leveldb/filter",
+    "github.com/beito123/goleveldb/leveldb/opt",
     "github.com/beito123/nbt",
+    "github.com/jessevdk/go-assets",
     "github.com/jessevdk/go-assets-builder",
-    "gopkg.in/cheggaaa/pb.v1",
+    "github.com/json-iterator/go",
+    "github.com/pbnjay/pixfont",
+    "github.com/pkg/errors",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

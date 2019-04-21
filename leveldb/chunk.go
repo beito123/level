@@ -25,8 +25,40 @@ func NewChunk(x, y int) *Chunk {
 		y:                   y,
 		biomes:              make([]byte, 256),
 		subChunks:           make([]*SubChunk, 16),
-		DefaultStorageIndex: 0,
+		Finalization:        NotGenerated,
+		DefaultStorageIndex: DefaultStorageIndex,
 	}
+}
+
+// Finalization show the status of a chunk
+// It's introduced in mcpe v1.1
+type Finalization int
+
+const (
+	// Unsupported is unsupported finalization by the chunk format
+	Unsupported Finalization = iota
+
+	// NotGenerated is not generated a chunk if it's set
+	NotGenerated
+
+	// NotSpawnMobs is not spawned mobs if it's set
+	NotSpawnMobs
+
+	// Generated is generated a chunk if it's set
+	Generated
+)
+
+func GetFinalization(id int) (Finalization, bool) {
+	switch id {
+	case 0:
+		return NotGenerated, true
+	case 1:
+		return NotSpawnMobs, true
+	case 2:
+		return Generated, true
+	}
+
+	return Unsupported, false
 }
 
 // Chunk is a block area which splits a world by 16x16
@@ -37,6 +69,9 @@ type Chunk struct {
 	biomes    []byte
 	subChunks []*SubChunk
 
+	Finalization Finalization
+
+	DefaultBlock        *BlockState
 	DefaultStorageIndex int
 }
 
@@ -71,7 +106,7 @@ func (chunk *Chunk) GetSubChunk(index int) (*SubChunk, bool) {
 		return nil, false
 	}
 
-	return chunk.subChunks[index], true
+	return chunk.subChunks[index], chunk.subChunks[index] != nil
 }
 
 // AtSubChunk returns a sub chunk
@@ -81,28 +116,26 @@ func (chunk *Chunk) AtSubChunk(y int) (*SubChunk, bool) {
 
 // Vaild vailds a chunk coordinates
 func (chunk *Chunk) Vaild(x, y, z int) bool {
-	return x >= 0 && x <= 15 && y >= 0 && y <= 15 && z >= 0 && z <= 15
+	return x >= 0 && x <= 15 && y >= 0 && y <= 256 && z >= 0 && z <= 15
 }
 
 // GetBlock gets a BlockState at a chunk coordinate
-// if both returned values are nil, maybe a block is air block
 func (chunk *Chunk) GetBlock(x, y, z int) (level.BlockState, error) {
 	return chunk.GetBlockAtStorage(x, y, z, chunk.DefaultStorageIndex)
 }
 
 // GetBlockAtStorage gets a BlockState at a chunk coordinate from storage of index
-// if both returned values are nil, maybe a block is air block
 func (chunk *Chunk) GetBlockAtStorage(x, y, z, index int) (*BlockState, error) {
-	if chunk.Vaild(x, y, z) {
+	if !chunk.Vaild(x, y, z) {
 		return nil, fmt.Errorf("invaild chunk coordinate")
 	}
 
 	sub, ok := chunk.AtSubChunk(y)
 	if !ok {
-		return nil, nil // Air
+		return chunk.DefaultBlock, nil // Air
 	}
 
-	return sub.AtBlock(x&15, y&15, z&15, index)
+	return sub.AtBlock(x, y%16, z, index)
 }
 
 // SetBlock set a BlockState at chunk coordinate

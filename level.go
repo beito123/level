@@ -41,7 +41,7 @@ type Format interface {
 	SaveChunks() error
 
 	// Chunk returns a loaded chunk.
-	Chunk(x, y int) (Chunk, error)
+	Chunk(x, y int) (Chunk, bool)
 
 	// LoadedChunks returns loaded chunks.
 	LoadedChunks() []Chunk

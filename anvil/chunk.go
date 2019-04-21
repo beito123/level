@@ -105,7 +105,7 @@ func (chunk *Chunk) AtSubChunk(y int) (*SubChunk, bool) {
 }
 
 // GetBlock gets a block at the xyz (chunk coordinate)
-func (chunk *Chunk) GetBlock(x, y, z int) (*block.BlockData, error) {
+func (chunk *Chunk) GetBlock(x, y, z int) (*block.Block, error) {
 	sub, ok := chunk.AtSubChunk(y)
 	if !ok {
 		return nil, nil

@@ -13,11 +13,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/beito123/binary"
 	lvldb "github.com/beito123/goleveldb/leveldb"
 	"github.com/beito123/goleveldb/leveldb/filter"
 	"github.com/beito123/goleveldb/leveldb/opt"
 	"github.com/beito123/level"
-	"github.com/beito123/level/block"
 )
 
 var DefaultOptions = &opt.Options{
@@ -81,6 +81,7 @@ func (block *BlockState) Value() int {
 	return block.value
 }
 
+// Equal returns whether block is equal b
 func (block *BlockState) Equal(b *BlockState) bool {
 	return block.name == b.name && block.value == b.value
 }
@@ -149,16 +150,13 @@ func (lvl *LevelDB) SaveChunks() error {
 }
 
 // Chunk returns a loaded chunk.
-func (lvl *LevelDB) Chunk(x, y int) (level.Chunk, error) {
+func (lvl *LevelDB) Chunk(x, y int) (level.Chunk, bool) {
 	chunk, ok := lvl.chunks[lvl.at(x, y)]
-	if !ok {
-		return nil, fmt.Errorf("level.leveldb: not loaded the chunk")
-	}
 
-	return chunk, nil
+	return chunk, ok
 }
 
-// LoadedChunks retuns loaded chunks.
+// LoadedChunks returns loaded chunks.
 func (lvl *LevelDB) LoadedChunks() []level.Chunk {
 	result := make([]level.Chunk, len(lvl.chunks))
 
@@ -189,20 +187,61 @@ const (
 type ChunkFormat interface {
 	// Read reads a chunk by x, y and dimension
 	Read(x, y int, dimension level.Dimension, db *lvldb.DB) (*Chunk, error)
-	Write(chunk *Chunk, db *lvldb.DB)
+	//Write(chunk *Chunk, db *lvldb.DB)
 }
 
 // ChunkFormatV120 is a chunk format after v1.2.0
 type ChunkFormatV120 struct {
-	RuntimeIDList map[int]block.BlockData
+	RuntimeIDList map[int]*BlockState
 }
 
 func (format *ChunkFormatV120) Read(x, y int, dimension level.Dimension, db *lvldb.DB) (*Chunk, error) {
 	chunk := NewChunk(x, y)
+	chunk.DefaultBlock = NewBlockState("minecraft:air", 0)
+
+	stateKey := getChunkKey(x, y, dimension, TagFinalizedState, 0)
+
+	hasState, err := db.Has(stateKey, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if hasState { // after 1.1
+		state, err := db.Get(stateKey, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(state) < 4 {
+			return nil, fmt.Errorf("level.leveldb: invaild finalization state")
+		}
+
+		var ok bool
+		chunk.Finalization, ok = GetFinalization(int(binary.ReadLInt(state)))
+		if !ok {
+			return nil, fmt.Errorf("level.leveldb: unknown finalization state id: %d", state)
+		}
+	} else {
+		chunk.Finalization = Unsupported
+	}
+
+	if chunk.Finalization == NotGenerated {
+		return chunk, nil
+	}
 
 	// Load subchunks
 	for i := 0; i < 16; i++ {
 		key := getChunkKey(x, y, dimension, TagSubChunkPrefix, i)
+
+		ok, err := db.Has(key, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if !ok {
+			continue
+		}
+
 		val, err := db.Get(key, nil)
 		if err != nil {
 			return nil, err
@@ -213,31 +252,7 @@ func (format *ChunkFormatV120) Read(x, y int, dimension level.Dimension, db *lvl
 			return nil, err
 		}
 
-		stateKey := getChunkKey(x, y, dimension, TagFinalizedState, -1)
-
-		hasState, err := db.Has(stateKey, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		if hasState { // after 1.1
-			state, err := db.Get(key, nil)
-			if err != nil {
-				return nil, err
-			}
-
-			if len(state) == 0 {
-				return nil, fmt.Errorf("level.leveldb: invaild finalization state")
-			}
-
-			var ok bool
-			sub.Finalization, ok = GetFinalization(int(state[0]))
-			if !ok {
-				return nil, fmt.Errorf("level.leveldb: unknown finalization state id: %d", state)
-			}
-		} else {
-			sub.Finalization = Unsupported
-		}
+		//fmt.Printf("%#v", sub)
 
 		chunk.subChunks[i] = sub
 	}
@@ -261,7 +276,7 @@ func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, er
 
 		sub, err = subFormat.Read(y, b)
 		if err != nil {
-			return nil, nil
+			return nil, err
 		}
 	default: // 0, 2, 3, 4, 5, 6, 7 // 1.2
 	}
@@ -271,14 +286,14 @@ func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, er
 
 func getChunkKey(x int, y int, dimension level.Dimension, tag byte, sid int) []byte {
 	base := []byte{
-		byte(x >> 24),
-		byte(x >> 16),
-		byte(x >> 8),
 		byte(x),
-		byte(y >> 24),
-		byte(y >> 16),
-		byte(y >> 8),
+		byte(x >> 8),
+		byte(x >> 16),
+		byte(x >> 24),
 		byte(y),
+		byte(y >> 8),
+		byte(y >> 16),
+		byte(y >> 24),
 	}
 
 	switch {
@@ -324,5 +339,15 @@ func getChunkKey(x int, y int, dimension level.Dimension, tag byte, sid int) []b
 		}
 	}
 
-	return base
+	return []byte{
+		base[0],
+		base[1],
+		base[2],
+		base[3],
+		base[4],
+		base[5],
+		base[6],
+		base[7],
+		tag,
+	}
 }

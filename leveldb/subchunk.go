@@ -59,41 +59,9 @@ func (storage *BlockStorage) GetBlock(x, y, z int) (*BlockState, error) {
 	return storage.Palettes[id], nil
 }
 
-// Finalization show the status of a chunk
-// It's introduced in mcpe v1.1
-type Finalization int
-
-const (
-	// Unsupported is unsupported finalization by the chunk format
-	Unsupported Finalization = iota
-
-	// NotGenerated is not generated a chunk if it's set
-	NotGenerated
-
-	// NotSpawnMobs is not spawned mobs if it's set
-	NotSpawnMobs
-
-	// Generated is generated a chunk if it's set
-	Generated
-)
-
-func GetFinalization(id int) (Finalization, bool) {
-	switch id {
-	case 0:
-		return NotGenerated, true
-	case 1:
-		return NotSpawnMobs, true
-	case 2:
-		return Generated, true
-	}
-
-	return Unsupported, false
-}
-
 func NewSubChunk(y byte) *SubChunk {
 	return &SubChunk{
-		Y:            y,
-		Finalization: NotGenerated,
+		Y: y,
 	}
 }
 
@@ -101,8 +69,6 @@ type SubChunk struct {
 	Y byte
 
 	Storages []*BlockStorage
-
-	Finalization Finalization
 }
 
 // At returns index from subchunk coordinates
@@ -122,7 +88,7 @@ func (SubChunk) Vaild(x, y, z int) error {
 
 // GetBlockStorage returns BlockStorage which subchunk contained with index
 func (sub *SubChunk) GetBlockStorage(index int) (*BlockStorage, bool) {
-	if len(sub.Storages) >= index || index < 0 {
+	if index >= len(sub.Storages) || index < 0 {
 		return nil, false
 	}
 

@@ -11,16 +11,14 @@ package leveldb
 
 import (
 	"fmt"
-	"math"
 
-	"github.com/beito123/level/binary"
-	"github.com/beito123/level/block"
+	"github.com/beito123/binary"
 	"github.com/beito123/level/util"
 	"github.com/beito123/nbt"
 )
 
 type SubChunkFormatV130 struct {
-	RuntimeIDList map[int]block.BlockData
+	RuntimeIDList map[int]*BlockState
 }
 
 func (format *SubChunkFormatV130) Version() byte {
@@ -55,7 +53,7 @@ func (format *SubChunkFormatV130) Read(y byte, b []byte) (*SubChunk, error) {
 		sub.Storages = append(sub.Storages, storage)
 	}
 
-	return nil, nil
+	return sub, nil
 }
 
 func (format *SubChunkFormatV130) ReadBlockStorage(stream *binary.Stream) (*BlockStorage, error) {
@@ -66,7 +64,7 @@ func (format *SubChunkFormatV130) ReadBlockStorage(stream *binary.Stream) (*Bloc
 		return nil, err
 	}
 
-	bitsPerBlock := (flags << 1)
+	bitsPerBlock := flags >> 1
 	isRuntime := (flags & 0x01) != 0
 
 	if bitsPerBlock > 16 {
@@ -76,18 +74,18 @@ func (format *SubChunkFormatV130) ReadBlockStorage(stream *binary.Stream) (*Bloc
 	mask := uint16((1 << uint(bitsPerBlock)) - 1)
 
 	wordBits := 8 * 4 // 1byte * 4
-	blocksPerWord := float64(wordBits) / float64(bitsPerBlock)
+	blocksPerWord := wordBits / int(bitsPerBlock)
 
-	wordCount := util.CeilInt(float64(BlockStorageSize) / math.Ceil(blocksPerWord))
+	wordCount := util.CeilInt(float64(BlockStorageSize) / float64(blocksPerWord))
 
 	count := 0
 	for i := 0; i < wordCount; i++ {
-		word, err := stream.Int()
+		word, err := stream.LInt()
 		if err != nil {
 			return nil, err
 		}
 
-		for j := 0; j < int(blocksPerWord); j++ {
+		for j := 0; j < blocksPerWord && count < BlockStorageSize; j++ {
 			id := uint16(word>>uint(j*int(bitsPerBlock))) & mask
 
 			storage.Blocks[count] = id
@@ -131,6 +129,8 @@ func (format *SubChunkFormatV130) ReadBlockStorage(stream *binary.Stream) (*Bloc
 
 			storage.Palettes = append(storage.Palettes, state)
 		}
+
+		stream.Skip(nbtStream.Stream.Off())
 	}
 
 	return storage, nil
