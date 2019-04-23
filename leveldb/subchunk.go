@@ -72,15 +72,6 @@ type SubChunk struct {
 	Storages []*BlockStorage
 }
 
-// Vaild vailds subchunk coordinates
-func (SubChunk) Vaild(x, y, z int) error {
-	if x < 0 || x > 15 || y < 0 || y > 15 || z < 0 || z > 15 {
-		return fmt.Errorf("invail coordinate")
-	}
-
-	return nil
-}
-
 // GetBlockStorage returns BlockStorage which subchunk contained with index
 func (sub *SubChunk) GetBlockStorage(index int) (*BlockStorage, bool) {
 	if index >= len(sub.Storages) || index < 0 {

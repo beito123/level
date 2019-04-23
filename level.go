@@ -19,6 +19,11 @@ type Level struct {
 // Format is a simple interface for level formats
 type Format interface {
 
+	// Close closes the level format
+	// You must close after you use the format
+	// It's should not run other functions after format is closed
+	Close() error
+
 	// LoadChunk loads a chunk.
 	LoadChunk(x, y int) error
 

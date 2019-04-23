@@ -56,6 +56,7 @@ func test() error {
 		return err
 	}
 
+	// For compatible with mcbe and mcje
 	generator.Textures.AddAlias("minecraft:air", "minecraft:cave_air")
 	generator.Textures.AddAlias("minecraft:grass_block", "minecraft:grass")
 
@@ -67,12 +68,12 @@ func test() error {
 	generator.Textures.PathList["minecraft:grass"] = resPath + "/textures/blocks/" + "grass_carried.png"
 	generator.Textures.PathList["minecraft:grass_block"] = resPath + "/textures/blocks/" + "grass_carried.png"
 
-	scale := 8
+	scale := 32
 	line := 16 * 16 * scale
 	img := image.NewRGBA(image.Rect(0, 0, line, line))
 
-	bx := 0
-	by := 0
+	bx := 4
+	by := -16
 	//base := 0
 
 	//bar := pb.StartNew(scale * scale)
@@ -108,6 +109,11 @@ func test() error {
 
 			SetImage(gimg, img, i*16*16, j*16*16)
 		}
+	}
+
+	err = generator.Level.Close()
+	if err != nil {
+		return err
 	}
 
 	//bar.FinishPrint("complete!")
@@ -158,7 +164,6 @@ func (mg *MapGenerator) Clone(tm *TextureManager) *MapGenerator {
 }
 
 // Generate generates a chunk image
-// path is a dir path for region
 // x and y are chunk coordinates
 // if it's returned nil as Image, the chunk is not created
 func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
@@ -199,6 +204,7 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 
 				var name string
 
+				// For compatible
 				b, ok := block.BlockListV112[bl.Name()]
 				if ok {
 					name = b.Name
@@ -225,20 +231,6 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 
 					maker.Add(x, z, name)
 				}
-
-				/*
-					bl, err := sub.AtBlock(x, 15-y, z)
-					if err != nil {
-						return nil, err
-					}
-
-					//fmt.Printf("test2:%s\n", bl.ToBlockData().Name)
-					name := bl.ToBlockData().Name
-					if maker.IsFree(x, z) && name != "minecraft:air" {
-						maker.Add(x, z, name)
-					}
-
-				*/
 			}
 		}
 	}

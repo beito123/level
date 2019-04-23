@@ -20,15 +20,20 @@ import (
 	"github.com/beito123/level"
 )
 
+// DefaultOptions is a default option for leveldb
+// You can use at NewWithOptions() and LoadWithOptions()
 var DefaultOptions = &opt.Options{
 	Filter:      filter.NewBloomFilter(10),
 	WriteBuffer: 4 * 1024 * 1024, // 4mb
 }
 
+// New returns new LevelDB
+// The path is a directory for save
 func New(path string) (*LevelDB, error) {
 	return NewWithOptions(path, DefaultOptions)
 }
 
+// NewWithOptions returns new LevelDB with leveldb options
 func NewWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 	db, err := lvldb.RecoverFile(path, options)
 	if err != nil {
@@ -41,10 +46,12 @@ func NewWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 	}, nil
 }
 
+// Load loads a leveldb level
 func Load(path string) (*LevelDB, error) {
 	return LoadWithOptions(path, DefaultOptions)
 }
 
+// LoadWithOptions loads a leveldb level with leveldb options
 func LoadWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 	db, err := lvldb.OpenFile(path, options)
 	if err != nil {
@@ -100,6 +107,17 @@ func (lvl *LevelDB) at(x, y int) int {
 	return y<<16 | x
 }
 
+// Close closes database of leveldb
+// You must close after you use the format
+// It's should not run other functions after format is closed
+func (lvl *LevelDB) Close() error {
+	if lvl.Database != nil {
+		return lvl.Database.Close()
+	}
+
+	return nil
+}
+
 // LoadChunk loads a chunk.
 // If create is true, generates a chunk.
 func (lvl *LevelDB) LoadChunk(x, y int) error {
@@ -146,6 +164,13 @@ func (lvl *LevelDB) SaveChunk(x, y int) error {
 
 // SaveChunks saves all chunks.
 func (lvl *LevelDB) SaveChunks() error {
+	for key := range lvl.chunks {
+		err := lvl.SaveChunk(key&0xffff, (key>>16)&0xffff)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -199,7 +224,7 @@ func (format *ChunkFormatV120) Read(x, y int, dimension level.Dimension, db *lvl
 	chunk := NewChunk(x, y)
 	chunk.DefaultBlock = NewBlockState("minecraft:air", 0)
 
-	stateKey := getChunkKey(x, y, dimension, TagFinalizedState, 0)
+	stateKey := format.getChunkKey(x, y, dimension, TagFinalizedState, 0)
 
 	hasState, err := db.Has(stateKey, nil)
 	if err != nil {
@@ -231,7 +256,7 @@ func (format *ChunkFormatV120) Read(x, y int, dimension level.Dimension, db *lvl
 
 	// Load subchunks
 	for i := 0; i < 16; i++ {
-		key := getChunkKey(x, y, dimension, TagSubChunkPrefix, i)
+		key := format.getChunkKey(x, y, dimension, TagSubChunkPrefix, i)
 
 		ok, err := db.Has(key, nil)
 		if err != nil {
@@ -260,6 +285,7 @@ func (format *ChunkFormatV120) Read(x, y int, dimension level.Dimension, db *lvl
 	return chunk, nil
 }
 
+// ReadSubChunk reads a subchunk from bytes b
 func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, err error) {
 	if len(b) == 0 {
 		return nil, fmt.Errorf("level.leveldb: enough bytes")
@@ -284,7 +310,33 @@ func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, er
 	return sub, nil
 }
 
-func getChunkKey(x int, y int, dimension level.Dimension, tag byte, sid int) []byte {
+func (format *ChunkFormatV120) toDimensionID(dimension level.Dimension) int {
+	switch dimension {
+	case level.OverWorld:
+		return 0
+	case level.Nether:
+		return 1
+	case level.TheEnd:
+		return 2
+	}
+
+	return 0
+}
+
+func (format *ChunkFormatV120) fromDimensionID(id int) level.Dimension {
+	switch id {
+	case 0:
+		return level.OverWorld
+	case 1:
+		return level.Nether
+	case 2:
+		return level.TheEnd
+	}
+
+	return level.Unknown
+}
+
+func (format *ChunkFormatV120) getChunkKey(x int, y int, dimension level.Dimension, tag byte, sid int) []byte {
 	base := []byte{
 		byte(x),
 		byte(x >> 8),
@@ -307,7 +359,7 @@ func getChunkKey(x int, y int, dimension level.Dimension, tag byte, sid int) []b
 			base[5],
 			base[6],
 			base[7],
-			byte(dimension),
+			byte(format.toDimensionID(dimension)),
 			tag,
 			byte(sid),
 		}
@@ -321,7 +373,7 @@ func getChunkKey(x int, y int, dimension level.Dimension, tag byte, sid int) []b
 			base[5],
 			base[6],
 			base[7],
-			byte(dimension),
+			byte(format.toDimensionID(dimension)),
 			tag,
 		}
 	case tag == TagSubChunkPrefix:
