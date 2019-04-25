@@ -17,6 +17,7 @@ type Level struct {
 }
 
 // Format is a simple interface for level formats
+// This needs to be supported goroutine (concurrency)
 type Format interface {
 
 	// Close closes the level format

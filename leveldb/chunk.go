@@ -12,6 +12,9 @@ package leveldb
 import (
 	"fmt"
 
+	"github.com/beito123/binary"
+	lvldb "github.com/beito123/goleveldb/leveldb"
+	"github.com/beito123/goleveldb/leveldb/util"
 	"github.com/beito123/level"
 )
 
@@ -48,6 +51,7 @@ const (
 	Generated
 )
 
+// GetFinalization returns Finalization by id
 func GetFinalization(id int) (Finalization, bool) {
 	switch id {
 	case 0:
@@ -127,7 +131,7 @@ func (chunk *Chunk) GetBlock(x, y, z int) (level.BlockState, error) {
 // GetBlockAtStorage gets a BlockState at a chunk coordinate from storage of index
 func (chunk *Chunk) GetBlockAtStorage(x, y, z, index int) (*BlockState, error) {
 	if !chunk.Vaild(x, y, z) {
-		return nil, fmt.Errorf("invaild chunk coordinate")
+		return nil, fmt.Errorf("level.leveldb: invaild chunk coordinate")
 	}
 
 	sub, ok := chunk.AtSubChunk(y)
@@ -141,4 +145,208 @@ func (chunk *Chunk) GetBlockAtStorage(x, y, z, index int) (*BlockState, error) {
 // SetBlock set a BlockState at chunk coordinate
 func (chunk *Chunk) SetBlock(x, y, z int, state level.BlockState) error {
 	return nil
+}
+
+const (
+	TagData2D         = 45
+	TagData2dLegacy   = 46
+	TagSubChunkPrefix = 47
+	TagLegacyTerrain  = 48
+	TagBlockEntity    = 49
+	TagEntity         = 50
+	TagPendingTicks   = 51
+	TagBlockExtraData = 52
+	TagBiomeState     = 53
+	TagFinalizedState = 54
+	TagVersion        = 118
+)
+
+// ChunkFormat is a chunk format reader and writer
+type ChunkFormat interface {
+	// Read reads a chunk by x, y and dimension
+	Read(x, y int, dimension level.Dimension, db *lvldb.DB) (*Chunk, error)
+	//Write(chunk *Chunk, db *lvldb.DB)
+}
+
+// ChunkFormatV120 is a chunk format v1.2.0 or after
+type ChunkFormatV120 struct {
+	RuntimeIDList map[int]*BlockState
+}
+
+func (format *ChunkFormatV120) Read(x, y int, dimension level.Dimension, db *lvldb.DB) (*Chunk, error) {
+	chunk := NewChunk(x, y)
+	chunk.DefaultBlock = NewBlockState("minecraft:air", 0)
+
+	stateKey := format.getChunkKey(x, y, dimension, TagFinalizedState, 0)
+
+	hasState, err := db.Has(stateKey, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if hasState { // after 1.1
+		state, err := db.Get(stateKey, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(state) < 4 {
+			return nil, fmt.Errorf("level.leveldb: invaild finalization state")
+		}
+
+		var ok bool
+		chunk.Finalization, ok = GetFinalization(int(binary.ReadLInt(state)))
+		if !ok {
+			return nil, fmt.Errorf("level.leveldb: unknown finalization state id: %d", state)
+		}
+	} else {
+		chunk.Finalization = Unsupported
+	}
+
+	if chunk.Finalization == NotGenerated {
+		return chunk, nil
+	}
+
+	prefix := format.getChunkKey(x, y, dimension, TagSubChunkPrefix, -1)
+
+	iter := db.NewIterator(util.BytesPrefix(prefix), nil)
+
+	// Load subchunks
+	for iter.Next() {
+		key := iter.Key()
+		val := iter.Value()
+
+		y := (key[len(key)-1]) & 15
+
+		sub, err := format.ReadSubChunk(y, val)
+		if err != nil {
+			return nil, err
+		}
+
+		chunk.subChunks[y] = sub
+	}
+
+	return chunk, nil
+}
+
+// ReadSubChunk reads a subchunk from bytes b
+func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, err error) {
+	if len(b) == 0 {
+		return nil, fmt.Errorf("level.leveldb: not enough bytes")
+	}
+
+	ver := b[0]
+
+	switch ver {
+	case 0, 2, 3, 4, 5, 6, 7: // v1.2 or before
+		// TODO: support old format
+		return nil, fmt.Errorf("level.leveldb: unsupported old subchunk format")
+	case 1, 8: // Palettized format // 1.2.13 or after
+		subFormat := &SubChunkFormatV1213{
+			RuntimeIDList: format.RuntimeIDList,
+		}
+
+		sub, err = subFormat.Read(y, b)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("level.leveldb: unsupported subchunk version %d", ver)
+	}
+
+	return sub, nil
+}
+
+func (format *ChunkFormatV120) toDimensionID(dimension level.Dimension) int {
+	switch dimension {
+	case level.OverWorld:
+		return 0
+	case level.Nether:
+		return 1
+	case level.TheEnd:
+		return 2
+	}
+
+	return 0
+}
+
+func (format *ChunkFormatV120) fromDimensionID(id int) level.Dimension {
+	switch id {
+	case 0:
+		return level.OverWorld
+	case 1:
+		return level.Nether
+	case 2:
+		return level.TheEnd
+	}
+
+	return level.Unknown
+}
+
+func (format *ChunkFormatV120) getChunkKey(x int, y int, dimension level.Dimension, tag byte, sid int) []byte {
+	base := []byte{
+		byte(x),
+		byte(x >> 8),
+		byte(x >> 16),
+		byte(x >> 24),
+		byte(y),
+		byte(y >> 8),
+		byte(y >> 16),
+		byte(y >> 24),
+	}
+
+	switch {
+	case dimension != level.OverWorld && sid != -1:
+		return []byte{
+			base[0],
+			base[1],
+			base[2],
+			base[3],
+			base[4],
+			base[5],
+			base[6],
+			base[7],
+			byte(format.toDimensionID(dimension)),
+			tag,
+			byte(sid),
+		}
+	case dimension != level.OverWorld:
+		return []byte{
+			base[0],
+			base[1],
+			base[2],
+			base[3],
+			base[4],
+			base[5],
+			base[6],
+			base[7],
+			byte(format.toDimensionID(dimension)),
+			tag,
+		}
+	case sid != -1:
+		return []byte{
+			base[0],
+			base[1],
+			base[2],
+			base[3],
+			base[4],
+			base[5],
+			base[6],
+			base[7],
+			tag,
+			byte(sid),
+		}
+	}
+
+	return []byte{
+		base[0],
+		base[1],
+		base[2],
+		base[3],
+		base[4],
+		base[5],
+		base[6],
+		base[7],
+		tag,
+	}
 }

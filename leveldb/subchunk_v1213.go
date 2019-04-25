@@ -17,15 +17,12 @@ import (
 	"github.com/beito123/nbt"
 )
 
-type SubChunkFormatV130 struct {
+// SubChunkFormatV1213 is a subchunk formatter v1.2.13 or after
+type SubChunkFormatV1213 struct {
 	RuntimeIDList map[int]*BlockState
 }
 
-func (format *SubChunkFormatV130) Version() byte {
-	return 0x08
-}
-
-func (format *SubChunkFormatV130) Read(y byte, b []byte) (*SubChunk, error) {
+func (format *SubChunkFormatV1213) Read(y byte, b []byte) (*SubChunk, error) {
 	sub := NewSubChunk(y)
 
 	stream := binary.NewStreamBytes(b)
@@ -35,28 +32,37 @@ func (format *SubChunkFormatV130) Read(y byte, b []byte) (*SubChunk, error) {
 		return nil, err
 	}
 
-	if ver != format.Version() {
-		return nil, fmt.Errorf("level.leveldb: unsupported version: version %d", ver)
-	}
-
-	numStorage, err := stream.Byte()
-	if err != nil {
-		return nil, err
-	}
-
-	for i := 0; i < int(numStorage); i++ {
+	switch ver {
+	case 1: // v1.2.13
 		storage, err := format.ReadBlockStorage(stream)
 		if err != nil {
 			return nil, err
 		}
 
 		sub.Storages = append(sub.Storages, storage)
+	case 8:
+		numStorage, err := stream.Byte()
+		if err != nil {
+			return nil, err
+		}
+
+		for i := 0; i < int(numStorage); i++ {
+			storage, err := format.ReadBlockStorage(stream)
+			if err != nil {
+				return nil, err
+			}
+
+			sub.Storages = append(sub.Storages, storage)
+		}
+	default:
+		return nil, fmt.Errorf("level.leveldb: unsupported version: version %d", ver)
 	}
 
 	return sub, nil
 }
 
-func (format *SubChunkFormatV130) ReadBlockStorage(stream *binary.Stream) (*BlockStorage, error) {
+// ReadBlockStorage reads a block storage
+func (format *SubChunkFormatV1213) ReadBlockStorage(stream *binary.Stream) (*BlockStorage, error) {
 	storage := NewBlockStorage()
 
 	flags, err := stream.Byte()
@@ -101,37 +107,37 @@ func (format *SubChunkFormatV130) ReadBlockStorage(stream *binary.Stream) (*Bloc
 
 	if isRuntime { // I don't have binary data, please give me if you have
 		return nil, fmt.Errorf("level.leveldb: unsupported runtime id")
-	} else { // nbt format
-		nbtStream := nbt.NewStreamBytes(nbt.LittleEndian, stream.Bytes())
+	}
 
-		for i := 0; i < int(paletteSize); i++ {
-			tag, err := nbtStream.ReadTag()
-			if err != nil {
-				return nil, err
-			}
+	nbtStream := nbt.NewStreamBytes(nbt.LittleEndian, stream.Bytes())
 
-			com, ok := tag.(*nbt.Compound)
-			if !ok {
-				return nil, fmt.Errorf("level.leveldb: unexpected tag")
-			}
-
-			name, err := com.GetString("name")
-			if err != nil {
-				return nil, err
-			}
-
-			val, err := com.GetInt("val")
-			if err != nil {
-				return nil, err
-			}
-
-			state := NewBlockState(name, int(val))
-
-			storage.Palettes = append(storage.Palettes, state)
+	for i := 0; i < int(paletteSize); i++ {
+		tag, err := nbtStream.ReadTag()
+		if err != nil {
+			return nil, err
 		}
 
-		stream.Skip(nbtStream.Stream.Off())
+		com, ok := tag.(*nbt.Compound)
+		if !ok {
+			return nil, fmt.Errorf("level.leveldb: unexpected tag")
+		}
+
+		name, err := com.GetString("name")
+		if err != nil {
+			return nil, err
+		}
+
+		val, err := com.GetInt("val")
+		if err != nil {
+			return nil, err
+		}
+
+		state := NewBlockState(name, int(val))
+
+		storage.Palettes = append(storage.Palettes, state)
 	}
+
+	stream.Skip(nbtStream.Stream.Off())
 
 	return storage, nil
 }

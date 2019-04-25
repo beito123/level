@@ -12,8 +12,8 @@ package leveldb
 import (
 	"fmt"
 	"strings"
+	"sync"
 
-	"github.com/beito123/binary"
 	lvldb "github.com/beito123/goleveldb/leveldb"
 	"github.com/beito123/goleveldb/leveldb/filter"
 	"github.com/beito123/goleveldb/leveldb/opt"
@@ -43,6 +43,7 @@ func NewWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 	return &LevelDB{
 		Database: db,
 		chunks:   make(map[int]*Chunk),
+		mutex:    new(sync.RWMutex),
 	}, nil
 }
 
@@ -61,6 +62,7 @@ func LoadWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 	return &LevelDB{
 		Database: db,
 		chunks:   make(map[int]*Chunk),
+		mutex:    new(sync.RWMutex),
 	}, nil
 }
 
@@ -101,9 +103,11 @@ type LevelDB struct {
 	Dimension level.Dimension
 
 	chunks map[int]*Chunk
+
+	mutex *sync.RWMutex
 }
 
-func (lvl *LevelDB) at(x, y int) int {
+func (LevelDB) at(x, y int) int {
 	return y<<16 | x
 }
 
@@ -112,7 +116,10 @@ func (lvl *LevelDB) at(x, y int) int {
 // It's should not run other functions after format is closed
 func (lvl *LevelDB) Close() error {
 	if lvl.Database != nil {
-		return lvl.Database.Close()
+		lvl.mutex.Lock()
+		err := lvl.Database.Close()
+		lvl.mutex.Unlock()
+		return err
 	}
 
 	return nil
@@ -130,7 +137,9 @@ func (lvl *LevelDB) LoadChunk(x, y int) error {
 		return err
 	}
 
+	lvl.mutex.Lock()
 	lvl.chunks[lvl.at(x, y)] = chunk
+	lvl.mutex.Unlock()
 
 	return nil
 }
@@ -152,7 +161,9 @@ func (lvl *LevelDB) HasGeneratedChunk(x, y int) bool {
 
 // IsLoadedChunk returns weather a chunk is loaded.
 func (lvl *LevelDB) IsLoadedChunk(x, y int) bool {
+	lvl.mutex.RLock()
 	_, ok := lvl.chunks[lvl.at(x, y)]
+	lvl.mutex.RUnlock()
 
 	return ok
 }
@@ -176,7 +187,9 @@ func (lvl *LevelDB) SaveChunks() error {
 
 // Chunk returns a loaded chunk.
 func (lvl *LevelDB) Chunk(x, y int) (level.Chunk, bool) {
+	lvl.mutex.RLock()
 	chunk, ok := lvl.chunks[lvl.at(x, y)]
+	lvl.mutex.RUnlock()
 
 	return chunk, ok
 }
@@ -185,221 +198,15 @@ func (lvl *LevelDB) Chunk(x, y int) (level.Chunk, bool) {
 func (lvl *LevelDB) LoadedChunks() []level.Chunk {
 	result := make([]level.Chunk, len(lvl.chunks))
 
+	lvl.mutex.RLock()
+
 	count := 0
 	for _, chunk := range lvl.chunks {
 		result[count] = chunk
 		count++
 	}
 
+	lvl.mutex.RUnlock()
+
 	return result
-}
-
-const (
-	TagData2D         = 45
-	TagData2dLegacy   = 46
-	TagSubChunkPrefix = 47
-	TagLegacyTerrain  = 48
-	TagBlockEntity    = 49
-	TagEntity         = 50
-	TagPendingTicks   = 51
-	TagBlockExtraData = 52
-	TagBiomeState     = 53
-	TagFinalizedState = 54
-	TagVersion        = 118
-)
-
-// ChunkFormat is a chunk format reader and writer
-type ChunkFormat interface {
-	// Read reads a chunk by x, y and dimension
-	Read(x, y int, dimension level.Dimension, db *lvldb.DB) (*Chunk, error)
-	//Write(chunk *Chunk, db *lvldb.DB)
-}
-
-// ChunkFormatV120 is a chunk format after v1.2.0
-type ChunkFormatV120 struct {
-	RuntimeIDList map[int]*BlockState
-}
-
-func (format *ChunkFormatV120) Read(x, y int, dimension level.Dimension, db *lvldb.DB) (*Chunk, error) {
-	chunk := NewChunk(x, y)
-	chunk.DefaultBlock = NewBlockState("minecraft:air", 0)
-
-	stateKey := format.getChunkKey(x, y, dimension, TagFinalizedState, 0)
-
-	hasState, err := db.Has(stateKey, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if hasState { // after 1.1
-		state, err := db.Get(stateKey, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(state) < 4 {
-			return nil, fmt.Errorf("level.leveldb: invaild finalization state")
-		}
-
-		var ok bool
-		chunk.Finalization, ok = GetFinalization(int(binary.ReadLInt(state)))
-		if !ok {
-			return nil, fmt.Errorf("level.leveldb: unknown finalization state id: %d", state)
-		}
-	} else {
-		chunk.Finalization = Unsupported
-	}
-
-	if chunk.Finalization == NotGenerated {
-		return chunk, nil
-	}
-
-	// Load subchunks
-	for i := 0; i < 16; i++ {
-		key := format.getChunkKey(x, y, dimension, TagSubChunkPrefix, i)
-
-		ok, err := db.Has(key, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		if !ok {
-			continue
-		}
-
-		val, err := db.Get(key, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		sub, err := format.ReadSubChunk(byte(i), val)
-		if err != nil {
-			return nil, err
-		}
-
-		//fmt.Printf("%#v", sub)
-
-		chunk.subChunks[i] = sub
-	}
-
-	return chunk, nil
-}
-
-// ReadSubChunk reads a subchunk from bytes b
-func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, err error) {
-	if len(b) == 0 {
-		return nil, fmt.Errorf("level.leveldb: enough bytes")
-	}
-
-	ver := b[0]
-
-	switch ver {
-	case 1: // 1.2.13 only
-	case 8: // after 1.3
-		subFormat := &SubChunkFormatV130{
-			RuntimeIDList: format.RuntimeIDList,
-		}
-
-		sub, err = subFormat.Read(y, b)
-		if err != nil {
-			return nil, err
-		}
-	default: // 0, 2, 3, 4, 5, 6, 7 // 1.2
-	}
-
-	return sub, nil
-}
-
-func (format *ChunkFormatV120) toDimensionID(dimension level.Dimension) int {
-	switch dimension {
-	case level.OverWorld:
-		return 0
-	case level.Nether:
-		return 1
-	case level.TheEnd:
-		return 2
-	}
-
-	return 0
-}
-
-func (format *ChunkFormatV120) fromDimensionID(id int) level.Dimension {
-	switch id {
-	case 0:
-		return level.OverWorld
-	case 1:
-		return level.Nether
-	case 2:
-		return level.TheEnd
-	}
-
-	return level.Unknown
-}
-
-func (format *ChunkFormatV120) getChunkKey(x int, y int, dimension level.Dimension, tag byte, sid int) []byte {
-	base := []byte{
-		byte(x),
-		byte(x >> 8),
-		byte(x >> 16),
-		byte(x >> 24),
-		byte(y),
-		byte(y >> 8),
-		byte(y >> 16),
-		byte(y >> 24),
-	}
-
-	switch {
-	case dimension != level.OverWorld && tag == TagSubChunkPrefix:
-		return []byte{
-			base[0],
-			base[1],
-			base[2],
-			base[3],
-			base[4],
-			base[5],
-			base[6],
-			base[7],
-			byte(format.toDimensionID(dimension)),
-			tag,
-			byte(sid),
-		}
-	case dimension != level.OverWorld:
-		return []byte{
-			base[0],
-			base[1],
-			base[2],
-			base[3],
-			base[4],
-			base[5],
-			base[6],
-			base[7],
-			byte(format.toDimensionID(dimension)),
-			tag,
-		}
-	case tag == TagSubChunkPrefix:
-		return []byte{
-			base[0],
-			base[1],
-			base[2],
-			base[3],
-			base[4],
-			base[5],
-			base[6],
-			base[7],
-			tag,
-			byte(sid),
-		}
-	}
-
-	return []byte{
-		base[0],
-		base[1],
-		base[2],
-		base[3],
-		base[4],
-		base[5],
-		base[6],
-		base[7],
-		tag,
-	}
 }

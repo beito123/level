@@ -74,49 +74,60 @@ func test() error {
 
 	bx := 4
 	by := -16
-	//base := 0
 
-	//bar := pb.StartNew(scale * scale)
-	/*making := &MakingImage{
-		Delay:  1,
-		Bounds: image.Rect(0, 0, line, line),
+	type ImageData struct {
+		X     int
+		Y     int
+		Image image.Image
 	}
 
-	making.Ready()*/
+	wg := new(sync.WaitGroup)
+
+	imgCh := make(chan *ImageData, scale*scale)
 
 	for i := 0; i < scale; i++ {
 		for j := 0; j < scale; j++ {
-			x := bx + i
-			y := by + j
+			wg.Add(1)
+			go func(a, b int) {
+				x := bx + a
+				y := by + b
 
-			//making.Point = image.Pt(i*16*16, j*16*16)
+				gimg, err := generator.Generate(x, y)
+				if err != nil {
+					panic(err)
+				}
 
-			gimg, err := generator.Generate(x, y)
-			if err != nil {
-				return err
-			}
+				if gimg == nil { // not generated
+					return
+				}
 
-			//bar.Increment()
+				rimg, ok := gimg.(*image.RGBA)
+				if ok {
+					pixfont.DrawString(rimg, 8, 8, fmt.Sprintf("%d, %d", x, y), color.Black)
+				}
 
-			if gimg == nil {
-				continue
-			}
+				imgCh <- &ImageData{
+					X:     a,
+					Y:     b,
+					Image: gimg,
+				}
 
-			rimg, ok := gimg.(*image.RGBA)
-			if ok {
-				pixfont.DrawString(rimg, 8, 8, fmt.Sprintf("%d, %d", x, y), color.Black)
-			}
-
-			SetImage(gimg, img, i*16*16, j*16*16)
+				wg.Done()
+			}(i, j)
 		}
+	}
+
+	wg.Wait()
+	close(imgCh)
+
+	for v := range imgCh {
+		SetImage(v.Image, img, v.X*16*16, v.Y*16*16)
 	}
 
 	err = generator.Level.Close()
 	if err != nil {
 		return err
 	}
-
-	//bar.FinishPrint("complete!")
 
 	path := "./chunks.png"
 
@@ -149,18 +160,8 @@ func NewMapGenerator(path string, lvl level.Format) (*MapGenerator, error) {
 }
 
 type MapGenerator struct {
-	Level         level.Format
-	Textures      *TextureManager
-	EnabledMaking bool
-	Making        []image.Image
-}
-
-func (mg *MapGenerator) Clone(tm *TextureManager) *MapGenerator {
-	return &MapGenerator{
-		Textures:      tm,
-		EnabledMaking: mg.EnabledMaking,
-		Making:        mg.Making,
-	}
+	Level    level.Format
+	Textures *TextureManager
 }
 
 // Generate generates a chunk image
@@ -184,15 +185,9 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 	}
 
 	maker := ChunkImageMaker{}
-	//maker.EnabledFreeMap = true
 	maker.Ready()
 
-	skipped := make(map[string]bool)
-
-	/*c, ok := chunk.(*leveldb.Chunk)
-	if ok {
-		fmt.Printf("Fin: %d", c.Finalization)
-	}*/
+	ignoreBlocks := make(map[string]bool)
 
 	for y := 0; y < 256; y++ {
 		for z := 0; z < 16; z++ {
@@ -212,25 +207,29 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 					name = bl.Name()
 				}
 
-				if name != "minecraft:air" {
-					_, ok := skipped[name]
-					if !ok && !maker.HasBlockData(name) {
-						if !mg.Textures.HasTexture(name) {
-							skipped[name] = true
-							fmt.Printf("Ignore palette(name: %s)\n", name)
-							continue
-						}
+				if name == "minecraft:air" {
+					continue
+				}
 
-						img, err := mg.Textures.GetTexture(name)
-						if err != nil {
-							return nil, fmt.Errorf("happened errors while processing palette(name: %s) error:%s", name, err)
-						}
+				// Make palette
+				_, ok = ignoreBlocks[name]
+				if !ok && !maker.HasBlockData(name) { // if the block isn't registered
+					if !mg.Textures.HasTexture(name) {
+						ignoreBlocks[name] = true // register ignore list to avoid repeating
 
-						maker.AddBlockData(name, img)
+						fmt.Printf("Ignore palette(name: %s)\n", name)
+						continue
 					}
 
-					maker.Add(x, z, name)
+					img, err := mg.Textures.GetTexture(name)
+					if err != nil {
+						return nil, fmt.Errorf("happened errors while processing palette(name: %s) error:%s", name, err)
+					}
+
+					maker.AddBlockData(name, img)
 				}
+
+				maker.Add(x, z, name)
 			}
 		}
 	}
@@ -506,182 +505,3 @@ func SetImage(src image.Image, dst *image.RGBA, atX, atY int) {
 	rect := image.Rect(atX, atY, atX+size.X, atY+size.Y)
 	draw.Draw(dst, rect, src, image.ZP, draw.Over)
 }
-
-/* Old codes
-
-func test() error {
-	resPath := "./resources/Vanilla_Resource_Pack_1.9.0"
-
-	bbytes, err := ioutil.ReadFile(resPath + "/blocks.json")
-	if err != nil {
-		return err
-	}
-
-	regCommentLine := regexp.MustCompile(`//.*\n`)
-	bbytes = regCommentLine.ReplaceAll(bbytes, []byte{}) // Remove
-
-	var data map[string]interface{}
-
-	err = json.Unmarshal(bbytes, &data)
-	if err != nil {
-		return err
-	}
-
-	blockList := make(map[string]string)
-
-	for name, d := range data {
-		var tname string
-
-		d2, ok := d.(map[string]interface{})
-		if !ok {
-			continue // ignore // it's format_version
-		}
-
-		switch ntype := d2["textures"].(type) {
-		case map[string]interface{}:
-			tname = ntype["up"].(string)
-		case string:
-			tname = ntype
-		default:
-			fmt.Printf("unknown: %#v\n", ntype)
-			continue
-		}
-
-		blockList["minecraft:"+name] = resPath + "/textures/blocks/" + tname + ".png"
-	}
-
-	loader, err := anvil.NewRegionLoader("./region-v1.13", anvil.RegionFileAnvil)
-	if err != nil {
-		return err
-	}
-
-	region, err := loader.LoadRegion(0, 0, false)
-	if err != nil {
-		return err
-	}
-
-	b, err := region.ReadChunk(0, 0)
-	if err != nil {
-		return err
-	}
-
-	chunk, err := anvil.ReadChunk(0, 0, b)
-	if err != nil {
-		return err
-	}
-
-	subchunks := chunk.SubChunks()
-
-	maker := ChunkImageMaker{}
-	maker.Ready()
-
-	for _, sub := range subchunks {
-		if sub == nil {
-			continue
-		}
-
-		maker.ResetBlockData()
-
-		for i, bs := range sub.Palette {
-			tpath, ok := blockList[bs.Name]
-			if !ok {
-				fmt.Printf("Ignore Palette(id:%d, name: %s), no listed\n", i, bs.Name)
-				continue
-			}
-
-			if !util.ExistFile(tpath) {
-				fmt.Printf("Ignore Palette(id:%d, name:%s), not found\n", i, bs.Name)
-				continue // ignore
-			}
-
-			file, err := os.Open(tpath)
-			if err != nil {
-				return err
-			}
-
-			defer file.Close()
-
-			img, _, err := image.Decode(file)
-			if err != nil {
-				return err
-			}
-
-			maker.AddBlockData(i, img)
-
-			fmt.Printf("Added Palette(id:%d, name:%s)\n", i, bs.Name)
-		}
-
-		fmt.Printf("Subchunks Y:%d\n", sub.Y)
-		for y := 0; y < 16; y++ {
-
-			fmt.Printf("block: y:%d\n", int(16*sub.Y)+y)
-
-			for z := 0; z < 16; z++ {
-				for x := 0; x < 16; x++ {
-					fmt.Printf("%d,", sub.Blocks[y<<8|z<<4|x])
-
-					maker.Add(x, z, int(sub.Blocks[y<<8|z<<4|x]))
-				}
-
-				fmt.Printf("\n")
-			}
-		}
-
-	}
-
-	maker.Output(fmt.Sprintf("./chunk.png"))
-
-	fmt.Printf("jagajaga")
-
-	return nil
-}
-
-type ChunkImageMaker struct {
-	Image *image.RGBA
-
-	BlockList map[int]image.Image
-}
-
-func (mk *ChunkImageMaker) Ready() {
-	line := 16 * 16
-	mk.Image = image.NewRGBA(image.Rect(0, 0, line, line))
-	mk.BlockList = make(map[int]image.Image)
-}
-
-func (mk *ChunkImageMaker) Output(path string) error {
-	file, _ := os.Create(path)
-	defer file.Close()
-
-	return png.Encode(file, mk.Image)
-}
-
-func (mk *ChunkImageMaker) Add(x, y, id int) {
-	block, ok := mk.BlockList[id]
-	if !ok {
-		return
-	}
-
-	SetImage(block, mk.Image, x*16, y*16)
-
-	return
-}
-
-func (mk *ChunkImageMaker) ResetBlockData() {
-	mk.BlockList = make(map[int]image.Image)
-}
-
-func (mk *ChunkImageMaker) AddBlockData(id int, img image.Image) {
-	mk.BlockList[id] = img
-}
-
-type BlockData struct {
-	Textures *interface{} `json:"textures"`
-}
-
-func SetImage(src image.Image, dst *image.RGBA, atX, atY int) {
-	for y := 0; y < src.Bounds().Dy(); y++ { // y
-		for x := 0; x < src.Bounds().Dx(); x++ { // x
-			dst.Set(atX+x, atY+y, src.At(x, y))
-		}
-	}
-}*/
