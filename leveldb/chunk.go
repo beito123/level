@@ -75,7 +75,7 @@ type Chunk struct {
 
 	Finalization Finalization
 
-	DefaultBlock        *BlockState
+	DefaultBlock        *RawBlockState
 	DefaultStorageIndex int
 }
 
@@ -129,7 +129,7 @@ func (chunk *Chunk) GetBlock(x, y, z int) (level.BlockState, error) {
 }
 
 // GetBlockAtStorage gets a BlockState at a chunk coordinate from storage of index
-func (chunk *Chunk) GetBlockAtStorage(x, y, z, index int) (*BlockState, error) {
+func (chunk *Chunk) GetBlockAtStorage(x, y, z, index int) (*RawBlockState, error) {
 	if !chunk.Vaild(x, y, z) {
 		return nil, fmt.Errorf("level.leveldb: invaild chunk coordinate")
 	}
@@ -139,12 +139,31 @@ func (chunk *Chunk) GetBlockAtStorage(x, y, z, index int) (*BlockState, error) {
 		return chunk.DefaultBlock, nil // Air
 	}
 
-	return sub.AtBlock(x&15, y&15, z&15, index)
+	return sub.GetBlock(x, y&15, z, index)
 }
 
 // SetBlock set a BlockState at chunk coordinate
-func (chunk *Chunk) SetBlock(x, y, z int, state level.BlockState) error {
-	return nil
+func (chunk *Chunk) SetBlock(x, y, z int, bs level.BlockState) error {
+	rbs, err := FromRawBlockState(bs)
+	if err != nil {
+		return err
+	}
+
+	return chunk.SetBlockAtStorage(x, y, z, DefaultStorageIndex, rbs)
+}
+
+// SetBlockAtStorage set a BlockState at chunk coordinate to storage of index
+func (chunk *Chunk) SetBlockAtStorage(x, y, z, index int, bs *RawBlockState) error {
+	if !chunk.Vaild(x, y, z) {
+		return fmt.Errorf("level.leveldb: invaild chunk coordinate")
+	}
+
+	sub, ok := chunk.AtSubChunk(y)
+	if !ok {
+		sub = NewSubChunk(byte(y/16))
+	}
+
+	return sub.SetBlock(x, y&15, z, index, bs)
 }
 
 const (
@@ -170,12 +189,12 @@ type ChunkFormat interface {
 
 // ChunkFormatV120 is a chunk format v1.2.0 or after
 type ChunkFormatV120 struct {
-	RuntimeIDList map[int]*BlockState
+	//RuntimeIDList map[int]*BlockState
 }
 
 func (format *ChunkFormatV120) Read(x, y int, dimension level.Dimension, db *lvldb.DB) (*Chunk, error) {
 	chunk := NewChunk(x, y)
-	chunk.DefaultBlock = NewBlockState("minecraft:air", 0)
+	chunk.DefaultBlock = NewRawBlockState("minecraft:air", 0)
 
 	stateKey := format.getChunkKey(x, y, dimension, TagFinalizedState, 0)
 
@@ -243,7 +262,7 @@ func (format *ChunkFormatV120) ReadSubChunk(y byte, b []byte) (sub *SubChunk, er
 		return nil, fmt.Errorf("level.leveldb: unsupported old subchunk format")
 	case 1, 8: // Palettized format // 1.2.13 or after
 		subFormat := &SubChunkFormatV1213{
-			RuntimeIDList: format.RuntimeIDList,
+			//RuntimeIDList: format.RuntimeIDList,
 		}
 
 		sub, err = subFormat.Read(y, b)

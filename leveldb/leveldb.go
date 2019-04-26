@@ -66,33 +66,61 @@ func LoadWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 	}, nil
 }
 
-// NewBlockState returns new BlockState
-func NewBlockState(name string, value int) *BlockState {
-	return &BlockState{
+// NewRawBlockState returns new RawBlockState
+func NewRawBlockState(name string, value int) *RawBlockState {
+	return &RawBlockState{
 		name:  strings.ToLower(name),
 		value: value,
 	}
 }
 
-// BlockState is a block information
-type BlockState struct {
+// FromRawBlockState returns new RawBlockState
+func FromRawBlockState(bs level.BlockState) (*RawBlockState, error) {
+	name, meta, ok := bs.ToBlockNameMeta()
+	if !ok {
+		return nil, fmt.Errorf("usable to convert from %s to leveldb.RawBlockState", bs.Name())
+	}
+
+	return NewRawBlockState(name, meta), nil
+}
+
+// RawBlockState is a raw block information
+type RawBlockState struct {
 	name  string
 	value int
 }
 
 // Name returns block name
-func (block *BlockState) Name() string {
+func (block *RawBlockState) Name() string {
 	return block.name
 }
 
 // Value returns block value
-func (block *BlockState) Value() int {
+func (block *RawBlockState) Value() int {
 	return block.value
 }
 
 // Equal returns whether block is equal b
-func (block *BlockState) Equal(b *BlockState) bool {
+func (block *RawBlockState) Equal(b *RawBlockState) bool {
 	return block.name == b.name && block.value == b.value
+}
+
+// ToBlockNameProperties returns block name and properties
+// If it's not supported, returns false for ok
+func (block *RawBlockState) ToBlockNameProperties() (name string, properties map[string]string, ok bool) {
+	return block.name, make(map[string]string), true
+}
+
+// ToBlockNameMeta returns block name and meta
+// If it's not supported, returns false for ok
+func (block *RawBlockState) ToBlockNameMeta() (name string, meta int, ok bool) {
+	return block.name, block.value, true
+}
+
+// ToBlockIDMeta returns block id and meta
+// If it's not supported, returns false for ok
+func (block *RawBlockState) ToBlockIDMeta() (id int, meta int, ok bool) {
+	return 0, 0, false
 }
 
 // LevelDB is a level format for mcbe

@@ -10,6 +10,44 @@ package leveldb
 */
 
 import "fmt"
+import "math"
+
+// GetStorageTypeFromSize returns 
+func GetStorageTypeFromSize(size uint) StorageType {
+	size--
+	size |= (size >> 1)
+	size |= (size >> 2)
+	size |= (size >> 4)
+	size |= (size >> 8)
+	size |= (size >> 16)
+	size++
+
+	return StorageType(math.Log2(float64(size)))
+}
+
+// StorageType is a type of BlockStorage
+type StorageType int
+
+// BitsPerBlock retunrs bits per a block for BlockStorage
+func (t StorageType) BitsPerBlock() int {
+	return int(t)
+}
+
+// PaletteSize returns a size of palette for StorageType
+func (t StorageType) PaletteSize() int {
+	return 1 << uint(t)
+}
+
+const (
+	TypePalette1 StorageType = 1
+	TypePalette2 StorageType = 2
+	TypePalette3 StorageType = 3
+	TypePalette4 StorageType = 4
+	TypePalette5 StorageType = 5
+	TypePalette6 StorageType = 6
+	TypePalette8 StorageType = 8
+	TypePalette16 StorageType = 16
+)
 
 // BlockStorageSize is a size of BlockStorage
 const BlockStorageSize = 16 * 16 * 16
@@ -23,7 +61,7 @@ func NewBlockStorage() *BlockStorage {
 
 // BlockStorage is a storage contains blocks of a subchunk
 type BlockStorage struct {
-	Palettes []*BlockState
+	Palettes []*RawBlockState
 	Blocks   []uint16
 }
 
@@ -35,14 +73,14 @@ func (BlockStorage) At(x, y, z int) int {
 // Vaild vailds blockstorage coordinates
 func (BlockStorage) Vaild(x, y, z int) error {
 	if x < 0 || x > 15 || y < 0 || y > 15 || z < 0 || z > 15 {
-		return fmt.Errorf("level.leveldb: invail coordinate")
+		return fmt.Errorf("level.leveldb: invaild block storage coordinate")
 	}
 
 	return nil
 }
 
 // GetBlock returns the BlockState at blockstorage coordinates
-func (storage *BlockStorage) GetBlock(x, y, z int) (*BlockState, error) {
+func (storage *BlockStorage) GetBlock(x, y, z int) (*RawBlockState, error) {
 	err := storage.Vaild(x, y, z)
 	if err != nil {
 		return nil, err
@@ -61,6 +99,25 @@ func (storage *BlockStorage) GetBlock(x, y, z int) (*BlockState, error) {
 	}
 
 	return storage.Palettes[id], nil
+}
+
+// SetBlock set the BlockState at blockstorage coordinates
+func (storage *BlockStorage) SetBlock(x, y, z int, bs *RawBlockState) error {
+	if len(storage.Palettes) > TypePalette16.PaletteSize() {
+		return fmt.Errorf("level.leveldb: unsupported palette size > %d", TypePalette16.PaletteSize())
+	}
+
+	for i, v := range storage.Palettes {
+		if v.Equal(bs) {
+			storage.Blocks[storage.At(x, y, z)] = uint16(i)
+			return nil
+		}
+	}
+
+	storage.Palettes = append(storage.Palettes, bs)
+	storage.Blocks[storage.At(x, y, z)] = uint16(len(storage.Palettes)-1)
+
+	return nil
 }
 
 // NewSubChunk returns new SubChunk
@@ -86,14 +143,24 @@ func (sub *SubChunk) GetBlockStorage(index int) (*BlockStorage, bool) {
 	return sub.Storages[index], true
 }
 
-// AtBlock returns BlockState at the subchunk coordinates
-func (sub *SubChunk) AtBlock(x, y, z, index int) (*BlockState, error) {
+// GetBlock returns BlockState at the subchunk coordinates
+func (sub *SubChunk) GetBlock(x, y, z, index int) (*RawBlockState, error) {
 	storage, ok := sub.GetBlockStorage(index)
 	if !ok {
 		return nil, fmt.Errorf("level.leveldb: invaild storage index")
 	}
 
 	return storage.GetBlock(x, y, z)
+}
+
+// SetBlock returns BlockState at the subchunk coordinates
+func (sub *SubChunk) SetBlock(x, y, z, index int, bs *RawBlockState) error {
+	storage, ok := sub.GetBlockStorage(index)
+	if !ok {
+		return fmt.Errorf("level.leveldb: invaild storage index")
+	}
+
+	return storage.SetBlock(x, y, z, bs)
 }
 
 // SubChunkFormat is a formatter for subchunk

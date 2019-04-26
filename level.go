@@ -77,5 +77,19 @@ type Chunk interface {
 
 // BlockState is a block information
 type BlockState interface {
+
+	// Name returns block name
 	Name() string
+
+	// ToBlockNameProperties returns block name and properties
+	// If it's not supported, returns false for ok
+	ToBlockNameProperties() (name string, properties map[string]string, ok bool)
+
+	// ToBlockNameMeta returns block name and meta
+	// If it's not supported, returns false for ok
+	ToBlockNameMeta() (name string, meta int, ok bool)
+
+	// ToBlockIDMeta returns block id and meta
+	// If it's not supported, returns false for ok
+	ToBlockIDMeta() (id int, meta int, ok bool)
 }

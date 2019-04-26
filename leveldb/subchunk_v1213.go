@@ -19,7 +19,7 @@ import (
 
 // SubChunkFormatV1213 is a subchunk formatter v1.2.13 or after
 type SubChunkFormatV1213 struct {
-	RuntimeIDList map[int]*BlockState
+	//RuntimeIDList map[int]*BlockState
 }
 
 func (format *SubChunkFormatV1213) Read(y byte, b []byte) (*SubChunk, error) {
@@ -70,7 +70,7 @@ func (format *SubChunkFormatV1213) ReadBlockStorage(stream *binary.Stream) (*Blo
 		return nil, err
 	}
 
-	bitsPerBlock := flags >> 1
+	bitsPerBlock := int(flags >> 1)
 	isRuntime := (flags & 0x01) != 0
 
 	if bitsPerBlock > 16 {
@@ -80,7 +80,7 @@ func (format *SubChunkFormatV1213) ReadBlockStorage(stream *binary.Stream) (*Blo
 	mask := uint16((1 << uint(bitsPerBlock)) - 1)
 
 	wordBits := 8 * 4 // 1byte * 4
-	blocksPerWord := wordBits / int(bitsPerBlock)
+	blocksPerWord := wordBits / bitsPerBlock
 
 	wordCount := util.CeilInt(float64(BlockStorageSize) / float64(blocksPerWord))
 
@@ -92,7 +92,7 @@ func (format *SubChunkFormatV1213) ReadBlockStorage(stream *binary.Stream) (*Blo
 		}
 
 		for j := 0; j < blocksPerWord && count < BlockStorageSize; j++ {
-			id := uint16(word>>uint(j*int(bitsPerBlock))) & mask
+			id := uint16(word>>uint(j*bitsPerBlock)) & mask
 
 			storage.Blocks[count] = id
 
@@ -119,7 +119,7 @@ func (format *SubChunkFormatV1213) ReadBlockStorage(stream *binary.Stream) (*Blo
 
 		com, ok := tag.(*nbt.Compound)
 		if !ok {
-			return nil, fmt.Errorf("level.leveldb: unexpected tag")
+			return nil, fmt.Errorf("level.leveldb: unexpected tag %s (%d)", tag.Name(), tag.ID())
 		}
 
 		name, err := com.GetString("name")
@@ -132,7 +132,7 @@ func (format *SubChunkFormatV1213) ReadBlockStorage(stream *binary.Stream) (*Blo
 			return nil, err
 		}
 
-		state := NewBlockState(name, int(val))
+		state := NewRawBlockState(name, int(val))
 
 		storage.Palettes = append(storage.Palettes, state)
 	}
@@ -140,4 +140,70 @@ func (format *SubChunkFormatV1213) ReadBlockStorage(stream *binary.Stream) (*Blo
 	stream.Skip(nbtStream.Stream.Off())
 
 	return storage, nil
+}
+
+// WriteBlockStorage writes a block storage
+func (format *SubChunkFormatV1213) WriteBlockStorage(stream *binary.Stream, storage *BlockStorage) error {
+	storageType := GetStorageTypeFromSize(uint(len(storage.Palettes)))
+
+	bitsPerBlock := storageType.BitsPerBlock()
+	isRuntime := false // unsupported runtime id
+
+	flags := byte(storageType.BitsPerBlock()) << 1
+
+	if isRuntime {
+		flags |= 1
+	}
+
+	err := stream.PutByte(flags)
+	if err != nil {
+		return err
+	}
+
+	wordBits := 8 * 4 // 1byte * 4
+	blocksPerWord := wordBits / bitsPerBlock
+
+	wordCount := util.CeilInt(float64(BlockStorageSize) / float64(blocksPerWord))
+
+	count := 0
+	for i := 0; i < wordCount; i++ {
+		var value int32
+		for j := 0; j < blocksPerWord && count < BlockStorageSize; j++ {
+			value = int32(storage.Blocks[count]) << uint(j*bitsPerBlock)
+		}
+
+		err := stream.PutLInt(value)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = stream.PutLInt(int32(len(storage.Palettes)))
+	if err != nil {
+		return err
+	}
+
+	nbtStream := nbt.NewStream(nbt.LittleEndian)
+
+	for _, bs := range storage.Palettes {
+		tag := &nbt.Compound{
+			Value: map[string]nbt.Tag{
+				"name": &nbt.String{
+					Value: bs.Name(),
+				},
+				"val": &nbt.Int{
+					Value: int32(bs.Value()),
+				},
+			},
+		}
+
+		err := nbtStream.WriteTag(tag)
+		if err != nil {
+			return err
+		}
+	}
+
+	stream.Put(nbtStream.Bytes())
+	
+	return nil
 }
