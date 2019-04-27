@@ -25,8 +25,15 @@ type Format interface {
 	// It's should not run other functions after format is closed
 	Close() error
 
+	// Dimension return dimension of the level
+	Dimension() Dimension
+
+	// SetDimension set dimension of the level
+	SetDimension(Dimension)
+
 	// LoadChunk loads a chunk.
-	LoadChunk(x, y int) error
+	// If create is enabled, generates a chunk if it doesn't exist
+	LoadChunk(x, y int, create bool) error
 
 	// UnloadChunk unloads a chunk.
 	UnloadChunk(x, y int) error
@@ -46,8 +53,9 @@ type Format interface {
 	// SaveChunks saves all chunks.
 	SaveChunks() error
 
-	// Chunk returns a loaded chunk.
-	Chunk(x, y int) (Chunk, bool)
+	// Chunk returns a chunk.
+	// If a chunk is not loaded, it will be loaded
+	Chunk(x, y int) (Chunk, error)
 
 	// LoadedChunks returns loaded chunks.
 	LoadedChunks() []Chunk

@@ -44,7 +44,7 @@ func main() {
 func test() error {
 	resPath := "./resources/vanilla"
 
-	lvl, err := leveldb.New("./db")
+	lvl, err := leveldb.Load("./db")
 	if err != nil {
 		return err
 	}
@@ -166,20 +166,18 @@ type MapGenerator struct {
 // x and y are chunk coordinates
 // if it's returned nil as Image, the chunk is not created
 func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
-	if mg.Level.HasGeneratedChunk(x, y) {
+	ok, err := mg.Level.HasGeneratedChunk(x, y)
+	if err != nil {
+		return nil, err
+	}
+
+	if !ok {
 		return nil, nil
 	}
-
-	if !mg.Level.IsLoadedChunk(x, y) {
-		err := mg.Level.LoadChunk(x, y)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	chunk, ok := mg.Level.Chunk(x, y)
-	if !ok {
-		return nil, fmt.Errorf("unknown error")
+	
+	chunk, err := mg.Level.Chunk(x, y)
+	if err != nil {
+		return nil, err
 	}
 
 	maker := ChunkImageMaker{}

@@ -173,9 +173,9 @@ func (chunk *Chunk) SetBlockAtStorage(x, y, z, index int, bs *RawBlockState) err
 
 	sub, ok := chunk.AtSubChunk(y)
 	if !ok {
-		sub = NewSubChunk(byte(y/16))
+		sub = NewSubChunk(byte(y / 16))
 	}
-	
+
 	err := sub.SetBlock(x, y&15, z, index, bs)
 
 	if err != nil {
@@ -212,14 +212,14 @@ type ChunkFormat interface {
 }
 
 const (
-	SubChunkVersionV120 = 0
+	SubChunkVersionV120  = 0
 	SubChunkVersionV1213 = 1
-	SubChunkVersionV130 = 8
+	SubChunkVersionV130  = 8
 )
 
 // ChunkFormatV100 is a chunk format v1.0.0 or after
 type ChunkFormatV100 struct {
-	
+
 	// SubChunkVersion is used a format when it writes a chunk
 	SubChunkVersion int
 }
@@ -228,9 +228,20 @@ func (format *ChunkFormatV100) Read(db *lvldb.DB, x, y int, dimension level.Dime
 	chunk := NewChunk(x, y)
 	chunk.DefaultBlock = NewRawBlockState("minecraft:air", 0)
 
+	// Exist
+
+	exist, err := format.Exist(db, x, y, dimension)
+	if err != nil {
+		return nil, err
+	}
+
+	if !exist {
+		return nil, fmt.Errorf("the chunk isn't generated")
+	}
+
 	// Finalization
 
-	stateKey := format.getChunkKey(x, y, dimension, TagFinalizedState, 0)
+	stateKey := format.getChunkKey(x, y, dimension, TagFinalizedState, -1)
 
 	hasState, err := db.Has(stateKey, nil)
 	if err != nil {
@@ -284,7 +295,7 @@ func (format *ChunkFormatV100) Read(db *lvldb.DB, x, y int, dimension level.Dime
 
 func (format *ChunkFormatV100) Write(db *lvldb.DB, chunk *Chunk, dimension level.Dimension) error {
 	if chunk.Finalization != Unsupported {
-		stateKey := format.getChunkKey(chunk.X(), chunk.X(), dimension, TagFinalizedState, 0)
+		stateKey := format.getChunkKey(chunk.X(), chunk.X(), dimension, TagFinalizedState, -1)
 
 		err := db.Put(stateKey, []byte{chunk.Finalization.ID()}, nil)
 		if err != nil {
@@ -311,7 +322,7 @@ func (format *ChunkFormatV100) Write(db *lvldb.DB, chunk *Chunk, dimension level
 }
 
 func (format *ChunkFormatV100) Exist(db *lvldb.DB, x, y int, dimension level.Dimension) (bool, error) {
-	return db.Has(format.getChunkKey(x, y, dimension, TagVersion, 0), nil)
+	return db.Has(format.getChunkKey(x, y, dimension, TagVersion, -1), nil)
 }
 
 // ReadSubChunk reads a subchunk from bytes b
@@ -342,7 +353,6 @@ func (format *ChunkFormatV100) ReadSubChunk(y byte, b []byte) (sub *SubChunk, er
 	return sub, nil
 }
 
-
 // WriteSubChunk reads a subchunk from bytes b
 func (format *ChunkFormatV100) WriteSubChunk(sub *SubChunk) (b []byte, err error) {
 	if format.SubChunkVersion == SubChunkVersionV120 { // TODO: support
@@ -364,7 +374,6 @@ func (format *ChunkFormatV100) WriteSubChunk(sub *SubChunk) (b []byte, err error
 	default:
 		return nil, fmt.Errorf("level.leveldb: unsupported subchunk version %d", format.SubChunkVersion)
 	}
-
 
 	return b, nil
 }
