@@ -35,13 +35,14 @@ func New(path string) (*LevelDB, error) {
 
 // NewWithOptions returns new LevelDB with leveldb options
 func NewWithOptions(path string, options *opt.Options) (*LevelDB, error) {
-	db, err := lvldb.RecoverFile(path, options)
+	db, err := lvldb.OpenFile(path, options)
 	if err != nil {
 		return nil, err
 	}
 
 	return &LevelDB{
 		Database: db,
+		Format:   &ChunkFormatV100{},
 		chunks:   make(map[int]*Chunk),
 		mutex:    new(sync.RWMutex),
 	}, nil
@@ -61,6 +62,7 @@ func LoadWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 
 	return &LevelDB{
 		Database: db,
+		Format:   &ChunkFormatV100{},
 		chunks:   make(map[int]*Chunk),
 		mutex:    new(sync.RWMutex),
 	}, nil
@@ -78,7 +80,7 @@ func NewRawBlockState(name string, value int) *RawBlockState {
 func FromRawBlockState(bs level.BlockState) (*RawBlockState, error) {
 	name, meta, ok := bs.ToBlockNameMeta()
 	if !ok {
-		return nil, fmt.Errorf("usable to convert from %s to leveldb.RawBlockState", bs.Name())
+		return nil, fmt.Errorf("level.leveldb: usable to convert from %s to RawBlockState", bs.Name())
 	}
 
 	return NewRawBlockState(name, meta), nil
@@ -160,7 +162,7 @@ func (lvl *LevelDB) LoadChunk(x, y int) error {
 		return fmt.Errorf("level.leveldb: already loaded the chunk")
 	}
 
-	chunk, err := lvl.Format.Read(x, y, lvl.Dimension, lvl.Database)
+	chunk, err := lvl.Format.Read(lvl.Database, x, y, lvl.Dimension)
 	if err != nil {
 		return err
 	}
@@ -174,17 +176,35 @@ func (lvl *LevelDB) LoadChunk(x, y int) error {
 
 // UnloadChunk unloads a chunk.
 func (lvl *LevelDB) UnloadChunk(x, y int) error {
+	if !lvl.IsLoadedChunk(x, y) {
+		return fmt.Errorf("level.leveldb: not loaded the chunk")
+	}
+
+	lvl.mutex.Lock()
+	delete(lvl.chunks, lvl.at(x, y))
+	lvl.mutex.Unlock()
+
 	return nil
 }
 
-// GenerateChunk generates a chunk
+// GenerateChunk generates a chunk and loads
 func (lvl *LevelDB) GenerateChunk(x, y int) error {
+	if lvl.IsLoadedChunk(x, y) {
+		return fmt.Errorf("level.leveldb: already loaded the chunk")
+	}
+
+	chunk := NewChunk(x, y)
+
+	lvl.mutex.Lock()
+	lvl.chunks[lvl.at(x, y)] = chunk
+	lvl.mutex.Unlock()
+
 	return nil
 }
 
 // HasGeneratedChunk returns whether the chunk is generaged
-func (lvl *LevelDB) HasGeneratedChunk(x, y int) bool {
-	return false
+func (lvl *LevelDB) HasGeneratedChunk(x, y int) (bool, error) {
+	return lvl.Format.Exist(lvl.Database, x, y, lvl.Dimension)
 }
 
 // IsLoadedChunk returns weather a chunk is loaded.
@@ -198,7 +218,14 @@ func (lvl *LevelDB) IsLoadedChunk(x, y int) bool {
 
 // SaveChunk saves a chunk.
 func (lvl *LevelDB) SaveChunk(x, y int) error {
-	return nil
+	lchunk, ok := lvl.Chunk(x, y)
+	if !ok {
+		return fmt.Errorf("level.leveldb: not loaded the chunk")
+	}
+
+	chunk := lchunk.(*Chunk)
+
+	return lvl.Format.Write(lvl.Database, chunk, lvl.Dimension)
 }
 
 // SaveChunks saves all chunks.

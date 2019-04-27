@@ -19,7 +19,7 @@ import (
 
 // SubChunkFormatV1213 is a subchunk formatter v1.2.13 or after
 type SubChunkFormatV1213 struct {
-	//RuntimeIDList map[int]*BlockState
+	OldFormat bool
 }
 
 func (format *SubChunkFormatV1213) Read(y byte, b []byte) (*SubChunk, error) {
@@ -59,6 +59,46 @@ func (format *SubChunkFormatV1213) Read(y byte, b []byte) (*SubChunk, error) {
 	}
 
 	return sub, nil
+}
+
+func (format *SubChunkFormatV1213) Write(sub *SubChunk) ([]byte, error) {
+	stream := binary.NewStream()
+
+	ver := SubChunkVersionV130
+	if format.OldFormat {
+		ver = SubChunkVersionV1213
+	}
+
+	err := stream.PutByte(byte(ver))
+	if err != nil {
+		return nil, err
+	}
+
+	if format.OldFormat {
+		storage, ok := sub.GetBlockStorage(DefaultStorageIndex)
+		if !ok {
+			return nil, fmt.Errorf("level.leveldb: couldn't find any block storages")
+		}
+
+		err := format.WriteBlockStorage(stream, storage)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err := stream.PutByte(byte(len(sub.Storages)))
+		if err != nil {
+			return nil, err
+		}
+
+		for _, storage := range sub.Storages {
+			err := format.WriteBlockStorage(stream, storage)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return stream.Bytes(), nil
 }
 
 // ReadBlockStorage reads a block storage

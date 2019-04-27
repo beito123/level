@@ -49,8 +49,6 @@ func test() error {
 		return err
 	}
 
-	lvl.Format = &leveldb.ChunkFormatV120{}
-
 	generator, err := NewMapGenerator(resPath, lvl)
 	if err != nil {
 		return err

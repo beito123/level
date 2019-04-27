@@ -35,7 +35,7 @@ type Format interface {
 	GenerateChunk(x, y int) error
 
 	// HasGeneratedChunk returns whether the chunk is generaged
-	HasGeneratedChunk(x, y int) bool
+	HasGeneratedChunk(x, y int) (bool, error)
 
 	// IsLoadedChunk returns weather a chunk is loaded.
 	IsLoadedChunk(x, y int) bool
