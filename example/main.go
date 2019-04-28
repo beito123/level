@@ -42,14 +42,14 @@ func main() {
 }
 
 func test() error {
-	resPath := "./resources/vanilla"
+	resPath := "./resources"
 
 	lvl, err := leveldb.Load("./db")
 	if err != nil {
 		return err
 	}
 
-	generator, err := NewMapGenerator(resPath, lvl)
+	generator, err := NewMapGenerator(resPath+"/vanilla", lvl)
 	if err != nil {
 		return err
 	}
@@ -58,15 +58,43 @@ func test() error {
 	generator.Textures.AddAlias("minecraft:air", "minecraft:cave_air")
 	generator.Textures.AddAlias("minecraft:grass_block", "minecraft:grass")
 
-	generator.Textures.PathList["minecraft:granite"] = resPath + "/textures/blocks/" + "stone_granite.png"
-	generator.Textures.PathList["minecraft:diorite"] = resPath + "/textures/blocks/" + "stone_diorite.png"
-	generator.Textures.PathList["minecraft:andesite"] = resPath + "/textures/blocks/" + "stone_andesite.png"
-	generator.Textures.PathList["minecraft:lava"] = resPath + "/textures/blocks/" + "lava_placeholder.png"
-	generator.Textures.PathList["minecraft:water"] = resPath + "/textures/blocks/" + "water_placeholder.png"
-	generator.Textures.PathList["minecraft:grass"] = resPath + "/textures/blocks/" + "grass_carried.png"
-	generator.Textures.PathList["minecraft:grass_block"] = resPath + "/textures/blocks/" + "grass_carried.png"
+	generator.Textures.PathList["minecraft:granite"] = resPath + "/vanilla/textures/blocks/" + "stone_granite.png"
+	generator.Textures.PathList["minecraft:diorite"] = resPath + "/vanilla/textures/blocks/" + "stone_diorite.png"
+	generator.Textures.PathList["minecraft:andesite"] = resPath + "/vanilla/textures/blocks/" + "stone_andesite.png"
+	generator.Textures.PathList["minecraft:lava"] = resPath + "/vanilla/textures/blocks/" + "lava_placeholder.png"
+	generator.Textures.PathList["minecraft:water"] = resPath + "/vanilla/textures/blocks/" + "water_placeholder.png"
+	generator.Textures.PathList["minecraft:grass"] = resPath + "/vanilla/textures/blocks/" + "grass_carried.png"
+	generator.Textures.PathList["minecraft:grass_block"] = resPath + "/vanilla/textures/blocks/" + "grass_carried.png"
 
-	scale := 32
+	// From https://minecraft-ids.grahamedgecombe.com/
+	// You can download from https://minecraft-ids.grahamedgecombe.com/api
+	entities := map[string]string{
+		"minecraft:zombie_villager": resPath + "/entities/" + "27.png",
+		"minecraft:skeleton":        resPath + "/entities/" + "51.png",
+		"minecraft:spider":          resPath + "/entities/" + "52.png",
+		"minecraft:zombie":          resPath + "/entities/" + "54.png",
+		"minecraft:slime":           resPath + "/entities/" + "55.png",
+		"minecraft:ghast":           resPath + "/entities/" + "56.png",
+		"minecraft:zombie_pigman":   resPath + "/entities/" + "57.png",
+		"minecraft:enderman":        resPath + "/entities/" + "58.png",
+		"minecraft:cave_spider":     resPath + "/entities/" + "59.png",
+		"minecraft:silverfish":      resPath + "/entities/" + "60.png",
+		"minecraft:blaze":           resPath + "/entities/" + "61.png",
+		"minecraft:magma_cube":      resPath + "/entities/" + "62.png",
+		"minecraft:pig":             resPath + "/entities/" + "90.png",
+		"minecraft:sheep":           resPath + "/entities/" + "91.png",
+		"minecraft:cow":             resPath + "/entities/" + "92.png",
+		"minecraft:chicken":         resPath + "/entities/" + "93.png",
+		"minecraft:squid":           resPath + "/entities/" + "94.png",
+		"minecraft:wolf":            resPath + "/entities/" + "95.png",
+		"minecraft:ocelot":          resPath + "/entities/" + "98.png",
+		"minecraft:horse":           resPath + "/entities/" + "100.png",
+		"minecraft:villager":        resPath + "/entities/" + "120.png",
+	}
+
+	generator.Textures.Load(entities)
+
+	scale := 10
 	line := 16 * 16 * scale
 	img := image.NewRGBA(image.Rect(0, 0, line, line))
 
@@ -174,7 +202,7 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 	if !ok {
 		return nil, nil
 	}
-	
+
 	chunk, err := mg.Level.Chunk(x, y)
 	if err != nil {
 		return nil, err
@@ -227,6 +255,46 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 
 				maker.Add(x, z, name)
 			}
+		}
+	}
+
+	// Bad hacks :P
+
+	entities := chunk.Entities()
+
+	for _, entity := range entities {
+		id, err := entity.GetString("identifier")
+		if err != nil {
+			return nil, err
+		}
+
+		fmt.Printf("jagajaga: %s\n", id)
+
+		if mg.Textures.HasTexture(id) {
+			if !mg.Textures.HasPrepared(id) {
+				err := mg.Textures.Prepare(id)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			img, err := mg.Textures.GetTexture(id)
+			if err != nil {
+				return nil, err
+			}
+
+			pos, err := entity.GetList("Pos")
+			if err != nil {
+				return nil, err
+			}
+
+			x, _ := pos[0].ToInt() // From Float
+			z, _ := pos[2].ToInt()
+
+			cx := x & 15
+			cz := z & 15
+
+			SetImage(img, maker.Image, cx*16, cz*16)
 		}
 	}
 
@@ -373,6 +441,12 @@ func (tm *TextureManager) Prepare(name string) error {
 	tm.mutex.Unlock()
 
 	return nil
+}
+
+func (tm *TextureManager) Load(list map[string]string) {
+	for n, v := range list {
+		tm.PathList[n] = v
+	}
 }
 
 // LoadResourcePack loads textures from offical resource pack (you can download from https://www.minecraft.net/en-us/)

@@ -1,5 +1,9 @@
 package level
 
+import (
+	"github.com/beito123/nbt"
+)
+
 /*
 	level
 
@@ -75,6 +79,27 @@ type Chunk interface {
 
 	// SetY set y coordinate
 	SetY(y int)
+
+	// Height returns the height of the highest block at chunk coordinate
+	Height(x, y int) (height uint16)
+
+	// Biome returns biome
+	Biome(x, y int) byte
+
+	// SetBiome set biome
+	SetBiome(x, y int, biome byte)
+
+	// Entities returns entities of nbt data
+	Entities() []*nbt.Compound
+
+	// SetEntities set entities of nbt data
+	SetEntities(entities []*nbt.Compound)
+
+	// BlockEntities returns block entities of nbt data
+	BlockEntities() []*nbt.Compound
+
+	// SetBlockEntities set block entities of nbt data
+	SetBlockEntities(entities []*nbt.Compound)
 
 	// GetBlock gets a BlockState at chunk coordinate
 	GetBlock(x, y, z int) (BlockState, error)

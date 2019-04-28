@@ -26,3 +26,31 @@ const (
 	// It' not use generally
 	Unknown
 )
+
+/*
+// HeightMapType returns type of heightmap
+type HeightMapType int
+
+const (
+	// MotionBlocking contains blocks block motion and a fluid
+	MotionBlocking HeightMapType = iota
+
+	// MotionBlockingNoLeaves contains blocks block motion, a fluid and leaves
+	MotionBlockingNoLeaves
+
+	// OceanFloor contains non air and soild block
+	OceanFloor
+
+	// OceanFloorWorldGeneration contains non air and fluid block. For world generation
+	OceanFloorWorldGeneration
+
+	// WorldSurface contains non air block
+	WorldSurface
+
+	// WorldSurfaceWorldGeneration contains non air block. For world generation
+	WorldSurfaceWorldGeneration
+)
+
+// Height returns the height of the highest block at chunk coordinate
+// If kind is not supported for a format, returns false for ok
+Height(x, y int, kind HeightMapType) (height uint16, ok bool)*/

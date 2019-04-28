@@ -11,6 +11,10 @@ package leveldb
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
+
+	"github.com/beito123/nbt"
 
 	"github.com/beito123/binary"
 	lvldb "github.com/beito123/goleveldb/leveldb"
@@ -81,10 +85,13 @@ func GetFinalization(id int) (Finalization, bool) {
 // Chunk is a block area which splits a world by 16x16
 // It has informations of block, biomes and etc...
 type Chunk struct {
-	x         int
-	y         int
-	biomes    []byte
-	subChunks []*SubChunk
+	x             int
+	y             int
+	subChunks     []*SubChunk
+	heightMap     []uint16
+	biomes        []byte
+	entities      []*nbt.Compound
+	blockEntities []*nbt.Compound
 
 	Finalization Finalization
 
@@ -110,6 +117,45 @@ func (chunk *Chunk) SetX(x int) {
 // SetY set y coordinate
 func (chunk *Chunk) SetY(y int) {
 	chunk.y = y
+}
+
+func (chunk *Chunk) atData2D(x, y int) int {
+	return y*16 + x
+}
+
+// Height returns the height of the highest block at chunk coordinate
+func (chunk *Chunk) Height(x, y int) uint16 {
+	return chunk.heightMap[chunk.atData2D(x, y)]
+}
+
+// Biome returns biome
+func (chunk *Chunk) Biome(x, y int) byte {
+	return chunk.biomes[chunk.atData2D(x, y)]
+}
+
+// SetBiome set biome
+func (chunk *Chunk) SetBiome(x, y int, biome byte) {
+	chunk.biomes[chunk.atData2D(x, y)] = biome
+}
+
+// Entities returns entities of nbt data
+func (chunk *Chunk) Entities() []*nbt.Compound {
+	return chunk.entities
+}
+
+// SetEntities set entities of nbt data
+func (chunk *Chunk) SetEntities(entities []*nbt.Compound) {
+	chunk.entities = entities
+}
+
+// BlockEntities returns block entities of nbt data
+func (chunk *Chunk) BlockEntities() []*nbt.Compound {
+	return chunk.blockEntities
+}
+
+// SetBlockEntities set block entities of nbt data
+func (chunk *Chunk) SetBlockEntities(entities []*nbt.Compound) {
+	chunk.blockEntities = entities
 }
 
 // SubChunks returns sub chunks
@@ -191,7 +237,7 @@ func (chunk *Chunk) SetBlockAtStorage(x, y, z, index int, bs *RawBlockState) err
 
 const (
 	TagData2D         = 45
-	TagData2dLegacy   = 46
+	TagData2DLegacy   = 46
 	TagSubChunkPrefix = 47
 	TagLegacyTerrain  = 48
 	TagBlockEntity    = 49
@@ -219,11 +265,15 @@ const (
 
 // ChunkFormatV100 is a chunk format v1.0.0 or after
 type ChunkFormatV100 struct {
-
 	// SubChunkVersion is used a format when it writes a chunk
 	SubChunkVersion int
+
+	DisabledData2D      bool
+	DisabledEntity      bool
+	DisabledBlockEntity bool
 }
 
+// Read reads a chunk
 func (format *ChunkFormatV100) Read(db *lvldb.DB, x, y int, dimension level.Dimension) (*Chunk, error) {
 	chunk := NewChunk(x, y)
 	chunk.DefaultBlock = NewRawBlockState("minecraft:air", 0)
@@ -236,7 +286,7 @@ func (format *ChunkFormatV100) Read(db *lvldb.DB, x, y int, dimension level.Dime
 	}
 
 	if !exist {
-		return nil, fmt.Errorf("the chunk isn't generated")
+		return nil, fmt.Errorf("level.leveldb: the chunk isn't generated")
 	}
 
 	// Finalization
@@ -290,9 +340,92 @@ func (format *ChunkFormatV100) Read(db *lvldb.DB, x, y int, dimension level.Dime
 		chunk.subChunks[y] = sub
 	}
 
+	// Read Data2D
+	if !format.DisabledData2D {
+		data2dKey := format.getChunkKey(x, y, dimension, TagData2D, -1)
+
+		hasData2D, err := db.Has(data2dKey, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if hasData2D { // sometimes a chunk hasn't entities
+			b, err := db.Get(data2dKey, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			ln := len(b)
+			heightMapLen := 512
+			biomesLen := 256
+
+			if ln < heightMapLen {
+				return nil, fmt.Errorf("level.leveldb: not enough bytes for HeightMap")
+			}
+
+			rawHeightMap := b[:512]
+
+			chunk.heightMap = make([]uint16, 16*16)
+			for i := 0; i < len(chunk.heightMap); i++ {
+				chunk.heightMap[i] = binary.ReadLUShort(rawHeightMap[i*2 : i*2+2])
+			}
+
+			if ln < biomesLen {
+				return nil, fmt.Errorf("level.leveldb: not enough bytes for Biomes")
+			}
+
+			chunk.biomes = b[heightMapLen : heightMapLen+biomesLen]
+		}
+	}
+
+	// Read Entity
+	if !format.DisabledEntity {
+		entityKey := format.getChunkKey(x, y, dimension, TagEntity, -1)
+
+		hasEntity, err := db.Has(entityKey, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if hasEntity { // sometimes a chunk hasn't entities
+			b, err := db.Get(entityKey, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			chunk.entities, err = format.ReadCompounds(b)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Read BlockEntity
+	if !format.DisabledBlockEntity {
+		blockEntityKey := format.getChunkKey(x, y, dimension, TagBlockEntity, -1)
+
+		hasBlockEntity, err := db.Has(blockEntityKey, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if hasBlockEntity { // sometimes a chunk hasn't block entities
+			b, err := db.Get(blockEntityKey, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			chunk.blockEntities, err = format.ReadCompounds(b)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return chunk, nil
 }
 
+// Write writes a chunk
 func (format *ChunkFormatV100) Write(db *lvldb.DB, chunk *Chunk, dimension level.Dimension) error {
 	if chunk.Finalization != Unsupported {
 		stateKey := format.getChunkKey(chunk.X(), chunk.X(), dimension, TagFinalizedState, -1)
@@ -318,9 +451,34 @@ func (format *ChunkFormatV100) Write(db *lvldb.DB, chunk *Chunk, dimension level
 		}
 	}
 
+	if !format.DisabledEntity {
+		b, err := format.WriteCompounds(chunk.entities)
+		if err != nil {
+			return err
+		}
+
+		err = db.Put(format.getChunkKey(chunk.x, chunk.y, dimension, TagEntity, -1), b, nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	if !format.DisabledBlockEntity {
+		b, err := format.WriteCompounds(chunk.blockEntities)
+		if err != nil {
+			return err
+		}
+
+		err = db.Put(format.getChunkKey(chunk.x, chunk.y, dimension, TagBlockEntity, -1), b, nil)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
+// Exist returns whether a chunk is generated
 func (format *ChunkFormatV100) Exist(db *lvldb.DB, x, y int, dimension level.Dimension) (bool, error) {
 	return db.Has(format.getChunkKey(x, y, dimension, TagVersion, -1), nil)
 }
@@ -356,7 +514,7 @@ func (format *ChunkFormatV100) ReadSubChunk(y byte, b []byte) (sub *SubChunk, er
 // WriteSubChunk reads a subchunk from bytes b
 func (format *ChunkFormatV100) WriteSubChunk(sub *SubChunk) (b []byte, err error) {
 	if format.SubChunkVersion == SubChunkVersionV120 { // TODO: support
-		return nil, fmt.Errorf("unsupported old subchunk format")
+		return nil, fmt.Errorf("level.leveldb: unsupported old subchunk format")
 	}
 
 	switch format.SubChunkVersion {
@@ -378,14 +536,54 @@ func (format *ChunkFormatV100) WriteSubChunk(sub *SubChunk) (b []byte, err error
 	return b, nil
 }
 
+// ReadCompounds reads compounds
+func (format *ChunkFormatV100) ReadCompounds(b []byte) ([]*nbt.Compound, error) {
+	var list []*nbt.Compound
+
+	stream := nbt.NewStreamBytes(nbt.LittleEndian, b)
+	for i := 0; i < 65536; i++ { // Limit for infinite loop
+		tag, err := stream.ReadTag()
+		if err != nil {
+			ioutil.WriteFile("./test.nbt", b, os.ModePerm)
+			return nil, err
+		}
+
+		com, ok := tag.(*nbt.Compound)
+		if !ok {
+			return nil, fmt.Errorf("level.leveldb: couldn't convert to nbt.Compound")
+		}
+
+		list = append(list, com)
+
+		if stream.Stream.Len() == 0 {
+			break
+		}
+	}
+
+	return list, nil
+}
+
+// WriteCompounds writes compounds
+func (format *ChunkFormatV100) WriteCompounds(tags []*nbt.Compound) ([]byte, error) {
+	stream := nbt.NewStream(nbt.LittleEndian)
+	for _, com := range tags {
+		err := stream.WriteTag(com)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return stream.Bytes(), nil
+}
+
 func (format *ChunkFormatV100) toDimensionID(dimension level.Dimension) int {
 	switch dimension {
 	case level.OverWorld:
 		return 0
 	case level.Nether:
-		return 1
+		return 10
 	case level.TheEnd:
-		return 2
+		return 20
 	}
 
 	return 0
@@ -395,9 +593,9 @@ func (format *ChunkFormatV100) fromDimensionID(id int) level.Dimension {
 	switch id {
 	case 0:
 		return level.OverWorld
-	case 1:
+	case 10:
 		return level.Nether
-	case 2:
+	case 20:
 		return level.TheEnd
 	}
 
@@ -416,6 +614,8 @@ func (format *ChunkFormatV100) getChunkKey(x int, y int, dimension level.Dimensi
 		byte(y >> 24),
 	}
 
+	dimID := format.toDimensionID(dimension)
+
 	switch {
 	case dimension != level.OverWorld && sid != -1:
 		return []byte{
@@ -427,7 +627,10 @@ func (format *ChunkFormatV100) getChunkKey(x int, y int, dimension level.Dimensi
 			base[5],
 			base[6],
 			base[7],
-			byte(format.toDimensionID(dimension)),
+			byte(dimID),
+			byte(dimID >> 8),
+			byte(dimID >> 16),
+			byte(dimID >> 24),
 			tag,
 			byte(sid),
 		}
@@ -441,7 +644,10 @@ func (format *ChunkFormatV100) getChunkKey(x int, y int, dimension level.Dimensi
 			base[5],
 			base[6],
 			base[7],
-			byte(format.toDimensionID(dimension)),
+			byte(dimID),
+			byte(dimID >> 8),
+			byte(dimID >> 16),
+			byte(dimID >> 24),
 			tag,
 		}
 	case sid != -1:
