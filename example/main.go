@@ -94,7 +94,7 @@ func test() error {
 
 	generator.Textures.Load(entities)
 
-	scale := 10
+	scale := 32
 	line := 16 * 16 * scale
 	img := image.NewRGBA(image.Rect(0, 0, line, line))
 
@@ -124,6 +124,7 @@ func test() error {
 				}
 
 				if gimg == nil { // not generated
+					wg.Done()
 					return
 				}
 
@@ -267,8 +268,6 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		fmt.Printf("jagajaga: %s\n", id)
 
 		if mg.Textures.HasTexture(id) {
 			if !mg.Textures.HasPrepared(id) {

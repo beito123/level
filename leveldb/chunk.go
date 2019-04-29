@@ -30,6 +30,7 @@ func NewChunk(x, y int) *Chunk {
 	return &Chunk{
 		x:                   x,
 		y:                   y,
+		heightMap:           make([]uint16, 256),
 		biomes:              make([]byte, 256),
 		subChunks:           make([]*SubChunk, 16),
 		Finalization:        NotGenerated,
@@ -446,6 +447,35 @@ func (format *ChunkFormatV100) Write(db *lvldb.DB, chunk *Chunk, dimension level
 		key := format.getChunkKey(chunk.x, chunk.y, dimension, TagSubChunkPrefix, int(sub.Y))
 
 		err = db.Put(key, b, nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	if !format.DisabledData2D {
+		count := 256
+		heightMapLen := count * 2
+		biomesLen := count
+
+		b := make([]byte, heightMapLen+biomesLen)
+
+		if len(chunk.heightMap) < count {
+			return fmt.Errorf("level.leveldb: invaild height map")
+		}
+
+		for i := 0; i < count; i++ {
+			short := binary.WriteLUShort(chunk.heightMap[i])
+			b[i*2] = short[0]
+			b[(i*2)+1] = short[1]
+		}
+
+		if len(chunk.biomes) < count {
+			return fmt.Errorf("level.leveldb: invaild biomes")
+		}
+
+		copy(b[heightMapLen:], chunk.biomes[:])
+
+		err := db.Put(format.getChunkKey(chunk.x, chunk.y, dimension, TagData2D, -1), b, nil)
 		if err != nil {
 			return err
 		}
