@@ -41,6 +41,23 @@ func main() {
 	}
 }
 
+func writeImg(img image.Image) error {
+	//scale := 16 * 16
+	//img := image.NewRGBA(image.Rect(0, 0, scale, scale))
+
+	path := "./test.png"
+
+	file, _ := os.Create(path)
+	defer file.Close()
+
+	err := png.Encode(file, img)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func test() error {
 	resPath := "./resources"
 
@@ -98,13 +115,23 @@ func test() error {
 	line := 16 * 16 * scale
 	img := image.NewRGBA(image.Rect(0, 0, line, line))
 
-	bx := 4
+	bx := -16
 	by := -16
 
 	type ImageData struct {
 		X     int
 		Y     int
 		Image image.Image
+	}
+
+	test, err := generator.Generate(-1, 10)
+	if err != nil {
+		panic(err)
+	}
+
+	writeImg(test)
+	if err != nil {
+		panic(err)
 	}
 
 	wg := new(sync.WaitGroup)
@@ -115,6 +142,7 @@ func test() error {
 		for j := 0; j < scale; j++ {
 			wg.Add(1)
 			go func(a, b int) {
+				defer wg.Done()
 				x := bx + a
 				y := by + b
 
@@ -124,7 +152,6 @@ func test() error {
 				}
 
 				if gimg == nil { // not generated
-					wg.Done()
 					return
 				}
 
@@ -138,8 +165,6 @@ func test() error {
 					Y:     b,
 					Image: gimg,
 				}
-
-				wg.Done()
 			}(i, j)
 		}
 	}
@@ -242,7 +267,7 @@ func (mg *MapGenerator) Generate(x, y int) (image.Image, error) {
 					if !mg.Textures.HasTexture(name) {
 						ignoreBlocks[name] = true // register ignore list to avoid repeating
 
-						fmt.Printf("Ignore palette(name: %s)\n", name)
+						//fmt.Printf("Ignore palette(name: %s)\n", name)
 						continue
 					}
 

@@ -10,6 +10,7 @@ package leveldb
 */
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -43,7 +44,7 @@ func NewWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 	return &LevelDB{
 		Database: db,
 		Format:   &ChunkFormatV100{},
-		chunks:   make(map[int]*Chunk),
+		chunks:   make(map[uint64]*Chunk),
 		mutex:    new(sync.RWMutex),
 	}, nil
 }
@@ -63,7 +64,7 @@ func LoadWithOptions(path string, options *opt.Options) (*LevelDB, error) {
 	return &LevelDB{
 		Database: db,
 		Format:   &ChunkFormatV100{},
-		chunks:   make(map[int]*Chunk),
+		chunks:   make(map[uint64]*Chunk),
 		mutex:    new(sync.RWMutex),
 	}, nil
 }
@@ -132,13 +133,13 @@ type LevelDB struct {
 	Format ChunkFormat
 
 	dimension level.Dimension
-	chunks    map[int]*Chunk
+	chunks    map[uint64]*Chunk
 
 	mutex *sync.RWMutex
 }
 
-func (LevelDB) at(x, y int) int {
-	return y<<16 | x
+func (LevelDB) at(x, y int) uint64 {
+	return (uint64(uint32(y)) << 32) | uint64(uint32(x))
 }
 
 // Close closes database of leveldb
@@ -247,8 +248,8 @@ func (lvl *LevelDB) SaveChunk(x, y int) error {
 
 // SaveChunks saves all chunks.
 func (lvl *LevelDB) SaveChunks() error {
-	for key := range lvl.chunks {
-		err := lvl.SaveChunk(key&0xffff, (key>>16)&0xffff)
+	for _, chunk := range lvl.chunks {
+		err := lvl.SaveChunk(chunk.x, chunk.y)
 		if err != nil {
 			return err
 		}
@@ -268,19 +269,23 @@ func (lvl *LevelDB) chunk(x, y int) (*Chunk, bool) {
 // Chunk returns a chunk.
 // If a chunk is not loaded, it will be loaded
 func (lvl *LevelDB) Chunk(x, y int) (level.Chunk, error) {
+	if lvl.IsLoadedChunk(x, y) {
+		chunk, ok := lvl.chunk(x, y)
+		if !ok {
+			return nil, errors.New("couldn't find the chunk")
+		}
+
+		return chunk, nil
+	}
+
 	err := lvl.LoadChunk(x, y, false)
 	if err != nil {
 		return nil, err
 	}
 
 	chunk, ok := lvl.chunk(x, y)
-	if ok {
-		return chunk, nil
-	}
-
-	err = lvl.LoadChunk(x, y, false)
-	if err != nil {
-		return nil, err
+	if !ok {
+		return nil, errors.New("couldn't find the chunk")
 	}
 
 	return chunk, nil

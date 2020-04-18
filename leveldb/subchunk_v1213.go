@@ -151,6 +151,8 @@ func (format *SubChunkFormatV1213) ReadBlockStorage(stream *binary.Stream) (*Blo
 
 	nbtStream := nbt.NewStreamBytes(nbt.LittleEndian, stream.Bytes())
 
+	//ioutil.WriteFile("val.nbt", nbtStream.Bytes(), os.ModePerm)
+
 	for i := 0; i < int(paletteSize); i++ {
 		tag, err := nbtStream.ReadTag()
 		if err != nil {
@@ -167,10 +169,11 @@ func (format *SubChunkFormatV1213) ReadBlockStorage(stream *binary.Stream) (*Blo
 			return nil, err
 		}
 
-		val, err := com.GetInt("val")
+		/*val, err := com.GetInt("val")
 		if err != nil {
 			return nil, err
-		}
+		}*/
+		val := 0
 
 		state := NewRawBlockState(name, int(val))
 
@@ -244,6 +247,6 @@ func (format *SubChunkFormatV1213) WriteBlockStorage(stream *binary.Stream, stor
 	}
 
 	stream.Put(nbtStream.Bytes())
-	
+
 	return nil
 }
