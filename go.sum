@@ -2,8 +2,8 @@ github.com/beito123/binary v3.0.1+incompatible h1:GniqmTj6DFBXRhJoOuhPab3EguOKIU
 github.com/beito123/binary v3.0.1+incompatible/go.mod h1:dbKbifKzgf/8daS0F4kV7EFiN2lcSQkbTfFsV3yCWtE=
 github.com/beito123/goleveldb v1.1.0 h1:NJcVtjRKEH+v0rpy/5hqUoUBzxNHknbc4nrxaPMrsnE=
 github.com/beito123/goleveldb v1.1.0/go.mod h1:3tZ1el1ZcqjdnouhVNzIFNmBsAeHLCUR2umJnIJDsB4=
-github.com/beito123/nbt v1.2.1 h1:Kybpd+9Q6yCQ60pjPYmSFBApCKGLtgyndcV81m0GtNM=
-github.com/beito123/nbt v1.2.1/go.mod h1:6f4/PTOuiGvZLfohRUdWZnpzaTplwatrY0RSfPYSaLw=
+github.com/beito123/nbt v1.2.2 h1:S7vLgWtXvflrTVSdpDOOVYAmmL10Yw9jztlAgJLIOqI=
+github.com/beito123/nbt v1.2.2/go.mod h1:6f4/PTOuiGvZLfohRUdWZnpzaTplwatrY0RSfPYSaLw=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

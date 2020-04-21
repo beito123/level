@@ -61,7 +61,7 @@ func writeImg(img image.Image) error {
 func test() error {
 	resPath := "./resources"
 
-	lvl, err := leveldb.Load("./db")
+	lvl, err := leveldb.Load("./mcbe1.14")
 	if err != nil {
 		return err
 	}
@@ -122,16 +122,6 @@ func test() error {
 		X     int
 		Y     int
 		Image image.Image
-	}
-
-	test, err := generator.Generate(-1, 10)
-	if err != nil {
-		panic(err)
-	}
-
-	writeImg(test)
-	if err != nil {
-		panic(err)
 	}
 
 	wg := new(sync.WaitGroup)

@@ -27,6 +27,32 @@ const (
 	Unknown
 )
 
+// GameType is a gamemode of players
+type GameType int
+
+// Name returns the name of game type
+func (typ GameType) Name() string {
+	switch typ {
+	case Survival:
+		return "survival"
+	case Creative:
+		return "creative"
+	case Adventure:
+		return "adventure"
+	case Spectator:
+		return "spectator"
+	}
+
+	return "unknown"
+}
+
+const (
+	Survival GameType = iota
+	Creative
+	Adventure
+	Spectator
+)
+
 /*
 // HeightMapType returns type of heightmap
 type HeightMapType int

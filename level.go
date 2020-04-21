@@ -1,9 +1,5 @@
 package level
 
-import (
-	"github.com/beito123/nbt"
-)
-
 /*
 	level
 
@@ -13,16 +9,47 @@ import (
 	http://opensource.org/licenses/mit-license.php
 */
 
+import (
+	"github.com/beito123/nbt"
+)
+
 // Level is a simple level loader
-// I will implement later // support high level access
 type Level struct {
-	// Manage level provider and more...
-	// Load level.dat and manage level data (name, spaen and etc..)
 }
 
 // Format is a simple interface for level formats
-// This needs to be supported goroutine (concurrency)
+// This needs to be supported concurrency
 type Format interface {
+
+	// Name returns name of level
+	Name() string
+
+	// SetName sets the name of level
+	SetName(name string)
+
+	// GameType returns the default game mode of level
+	GameType() GameType
+
+	// SetGameType sets the game mode of level
+	SetGameType(typ GameType)
+
+	// Spawn returns the default spawn of level
+	Spawn() (x, y, z int)
+
+	// SetSpawn sets the default spawn of level
+	SetSpawn(x, y, z int)
+
+	// Property returns a property of level.dat
+	Property(name string) (tag nbt.Tag, ok bool)
+
+	// SetProperty sets a property
+	SetProperty(tag nbt.Tag)
+
+	// AllProperties returns all properties
+	AllProperties() *nbt.Compound
+
+	// SetAllProperties sets all properties
+	SetAllProperties(com *nbt.Compound)
 
 	// Close closes the level format
 	// You must close after you use the format
@@ -109,7 +136,7 @@ type Chunk interface {
 }
 
 // BlockState is a block information
-type BlockState interface {
+type BlockState interface { // TODO: fix bad codes :P
 
 	// Name returns block name
 	Name() string
